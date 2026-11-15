@@ -92,6 +92,45 @@ public final class SettingsStore: @unchecked Sendable {
         defaults.set(enabled, forKey: key(language, "feature.\(feature.rawValue)"))
     }
 
+    // MARK: Tests
+
+    /// The user's runner choice; nil means auto-detect per project.
+    public func testRunner(for language: Language) -> TestRunnerKind? {
+        defaults.string(forKey: key(language, "testRunner")).flatMap(TestRunnerKind.init(rawValue:))
+    }
+
+    public func setTestRunner(_ kind: TestRunnerKind?, for language: Language) {
+        if let kind { defaults.set(kind.rawValue, forKey: key(language, "testRunner")) } else {
+            defaults.removeObject(forKey: key(language, "testRunner"))
+        }
+    }
+
+    /// Custom zig / cargo / gradle binary; nil means auto-detect.
+    public func testExecutablePath(for language: Language) -> String? {
+        guard let path = defaults.string(forKey: key(language, "testExecutable")), !path.isEmpty else { return nil }
+        return path
+    }
+
+    public func setTestExecutablePath(_ path: String?, for language: Language) {
+        if let path, !path.isEmpty { defaults.set(path, forKey: key(language, "testExecutable")) } else {
+            defaults.removeObject(forKey: key(language, "testExecutable"))
+        }
+    }
+
+    /// Extra arguments appended to every test command (e.g. `--offline`, `--release`).
+    public func testArguments(for language: Language) -> [String] {
+        defaults.stringArray(forKey: key(language, "testArguments")) ?? []
+    }
+
+    public func setTestArguments(_ arguments: [String], for language: Language) {
+        defaults.set(arguments, forKey: key(language, "testArguments"))
+    }
+
+    public var testTimeout: TimeInterval {
+        get { defaults.object(forKey: "testTimeoutSeconds") as? Double ?? 15 * 60 }
+        set { defaults.set(newValue, forKey: "testTimeoutSeconds") }
+    }
+
     // MARK: Lifecycle
 
     /// Servers idle longer than this are shut down. 0 disables idle shutdown.
@@ -125,7 +164,7 @@ public final class SettingsStore: @unchecked Sendable {
     }
 
     public func resetToDefaults(for language: Language) {
-        for name in ["enabled", "serverPath", "arguments", "extensions"] {
+        for name in ["enabled", "serverPath", "arguments", "extensions", "testRunner", "testExecutable", "testArguments"] {
             defaults.removeObject(forKey: key(language, name))
         }
         for feature in Feature.allCases {

@@ -22,6 +22,12 @@ struct SettingsView: View {
                     }
                 }
                 HStack {
+                    Text("Test timeout")
+                    Stepper(value: model.testTimeoutMinutes, in: 1...120, step: 1) {
+                        Text("\(Int(model.testTimeoutMinutes.wrappedValue)) min").monospacedDigit()
+                    }
+                }
+                HStack {
                     Button("Open Extensions Settings…") { model.openExtensionsSettings() }
                     Button("Re-detect Servers") { model.refreshDetection() }
                 }
@@ -94,6 +100,8 @@ struct LanguageSection: View {
                     }
                 }
 
+                TestSettings(language: language)
+
                 LabeledContent("Status") {
                     HStack(spacing: 6) {
                         Circle().fill(color(for: status.state)).frame(width: 9, height: 9)
@@ -135,5 +143,51 @@ struct LanguageSection: View {
         case .error, .notFound: return .red
         case .stopped, .disabled: return .gray
         }
+    }
+}
+
+struct TestSettings: View {
+    let language: Language
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        let enabled = model.settings.isFeatureEnabled(.tests, for: language)
+        LabeledContent("Test runner") {
+            Picker("", selection: model.testRunnerBinding(language)) {
+                Text("Auto-detect").tag("auto")
+                ForEach(TestRunnerKind.kinds(for: language)) { kind in
+                    Text(kind.displayName).tag(kind.rawValue)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+        .disabled(!enabled)
+        LabeledContent("Test tools") {
+            VStack(alignment: .trailing, spacing: 2) {
+                if let custom = model.settings.testExecutablePath(for: language) {
+                    Text("custom: \(custom)").font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
+                }
+                ForEach(model.testTools[language] ?? [], id: \.tool) { item in
+                    Text("\(item.tool): \(item.path ?? "not found")")
+                        .font(.caption.monospaced())
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(item.path == nil ? .orange : .secondary)
+                }
+                HStack {
+                    Button("Choose…") { model.chooseTestExecutable(for: language) }
+                    Button("Use Auto-detect") { model.resetTestExecutable(for: language) }
+                        .disabled(model.settings.testExecutablePath(for: language) == nil)
+                }
+            }
+        }
+        .disabled(!enabled)
+        LabeledContent("Extra test arguments") {
+            TextField("e.g. --offline", text: model.testArgumentsBinding(language))
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 260)
+        }
+        .disabled(!enabled)
     }
 }

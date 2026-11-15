@@ -78,6 +78,33 @@ public struct ServerLocator: Sendable {
         return result
     }
 
+    /// Generic lookup for toolchain binaries (zig, cargo, gradle, …), best first.
+    public func findTools(named name: String, miseToolDirectories: [String], preferredDirectories: [URL] = []) -> [URL] {
+        var result: [URL] = []
+        var seen = Set<String>()
+        func add(_ url: URL) {
+            let resolved = url.resolvingSymlinksInPath().path
+            guard isExecutableFile(url.path), !seen.contains(resolved) else { return }
+            seen.insert(resolved)
+            result.append(url)
+        }
+        for dir in preferredDirectories { add(dir.appendingPathComponent(name)) }
+        let installs = miseDataDirectory.appendingPathComponent("installs")
+        for toolDir in miseToolDirectories {
+            for version in sortedChildren(of: installs.appendingPathComponent(toolDir)) {
+                for found in findExecutables(named: name, in: version, maxDepth: 3) { add(found) }
+            }
+        }
+        var dirs: [URL] = [home.appendingPathComponent(".cargo/bin"), URL(fileURLWithPath: "/opt/homebrew/bin"),
+                           URL(fileURLWithPath: "/usr/local/bin"), home.appendingPathComponent(".local/bin")]
+        for candidate in sortedChildren(of: home.appendingPathComponent(".sdkman/candidates")) {
+            dirs.append(candidate.appendingPathComponent("current/bin"))
+        }
+        dirs += pathEnvironment.split(separator: ":").map { URL(fileURLWithPath: String($0)) }
+        for dir in dirs { add(dir.appendingPathComponent(name)) }
+        return result
+    }
+
     /// Tool directories a server needs on PATH (e.g. `cargo` for rust-analyzer, `zig` for zls, `java` for Kotlin LS).
     public func supportDirectories(for language: Language) -> [URL] {
         var dirs: [URL] = []
@@ -131,7 +158,7 @@ public struct ServerLocator: Sendable {
     }
 
     /// Children sorted by version-like name, newest first.
-    func sortedChildren(of dir: URL) -> [URL] {
+    public func sortedChildren(of dir: URL) -> [URL] {
         guard let names = try? fileManager.contentsOfDirectory(atPath: dir.path) else { return [] }
         // Concrete versions (digit-first names) before aliases like "latest", newest first.
         func rank(_ name: String) -> Int { name.first?.isNumber == true ? 0 : 1 }

@@ -54,7 +54,8 @@ final class SourceEditorCommand: NSObject, XCSourceEditorCommand {
             }
         }
 
-        let transport = BridgeClient(timeout: 180) {
+        let timeout = EditorCommandEngine.isLongRunning(command) ? settings.testTimeout + 60 : 180
+        let transport = BridgeClient(timeout: timeout) {
             HostLauncher.launch(activate: false)
         }
         let task = Task {

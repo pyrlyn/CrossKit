@@ -8,7 +8,7 @@ CrossKit is an Xcode Source Editor Extension that bridges Xcode to Language Serv
 | Zig | [`zls`](https://github.com/zigtools/zls) | `.zig` |
 | Rust | [`rust-analyzer`](https://rust-analyzer.github.io) | `.rs` |
 
-It provides completion, go to definition, find references, diagnostics, and hover info as **Editor › CrossKit** menu commands, which you can bind to keys. Everything is configured in a native settings window, so you never edit a config file. CrossKit makes no network calls; it only launches local server binaries.
+It provides completion, go to definition, find references, diagnostics, and hover info as **Editor › CrossKit** menu commands, which you can bind to keys. It also runs tests with each language's native runner (`zig test` / `zig build test`, `cargo test` / `cargo nextest`, JUnit 5 through Gradle). Everything is configured in a native settings window, so you never edit a config file. CrossKit makes no network calls; it only launches local server binaries.
 
 ## How it works
 
@@ -38,10 +38,11 @@ Open **CrossKit.app**, the menu bar icon, or **Editor › CrossKit › Open Cros
 
 * **Turn the language on or off.**
 * **Pick the server binary.** CrossKit auto-detects it by default. You can also pick one from the list of detected binaries, choose a file with **Choose…**, or go back to auto-detection.
-* **Turn individual features on or off:** completion, go to definition, find references, diagnostics, and hover.
+* **Turn individual features on or off:** completion, go to definition, find references, diagnostics, hover, and running tests.
+* **Configure test running:** the runner (auto-detected or forced), the test tool binary (auto-detected or chosen), and extra arguments such as `--offline`.
 * **See live server status:** running (with pid and workspace), starting, restarting, stopped, error, or not found. The last error is shown with the tail of the server's stderr, next to **Restart** and **Stop** buttons.
 
-The idle timeout is a global setting. Changes are saved immediately; there is no Save button.
+The idle timeout and the test timeout are global settings. Changes are saved immediately; there is no Save button.
 
 ### Auto-detection order
 
@@ -107,10 +108,23 @@ CROSSKIT_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" xcodebuild
 | Find References | `textDocument/references` | Inserts a comment block listing `path:line:col` with a preview for each reference. |
 | Show Hover Info | `textDocument/hover` | Inserts the hover text (signature and docs) as comments above the cursor. |
 | Show Diagnostics | pushed `publishDiagnostics` (or pull `textDocument/diagnostic`) | Inserts `// [CrossKit] error: …` above each affected line. |
+| Show Test Markers | – | Inserts `// [CrossKit] ▶ test …` above every test found in the file. |
+| Run Tests in File | – | Runs every test in the file, shows a pass/fail summary alert, and puts a `✓ passed` / `✗ failed — reason` marker above each test. |
+| Run Test at Cursor | – | Runs only the test that encloses the cursor. |
 | Clear CrossKit Annotations | – | Removes every `// [CrossKit]` line. |
 | Open CrossKit Settings | – | Brings up the host app. |
 
 Annotation lines are ordinary `//` comments in all three languages and always start with `// [CrossKit]`, so you can remove them with one command. Undo works as usual.
+
+## Running tests
+
+| Language | Runners (auto-detect picks the first that applies) | Test discovery |
+|---|---|---|
+| Zig | `zig build test` when the project has `build.zig`, otherwise `zig test <file>` (with `--test-filter` for one test) | `test "name" { … }`, `test name { … }`, and unnamed `test { … }` blocks |
+| Rust | `cargo nextest run` when cargo-nextest is installed, otherwise `cargo test` | `#[test]`, `#[tokio::test]`, and similar attributes inside nested `mod`s; when rust-analyzer is available, its `experimental/runnables` supply the exact test paths and cargo arguments |
+| Kotlin | `./gradlew test` when the project has a wrapper, otherwise `gradle test`; filtered with `--tests` | `@Test`, `@ParameterizedTest`, `@RepeatedTest`, and `@TestFactory` functions, including `@Nested` inner classes |
+
+Every run also appears in the host app's **Test Results** window: the command, working directory, duration, full output, and a table of tests with status, time, failure output, and a `file:line` button that opens the test in Xcode. Gradle results come from the JUnit XML reports in `build/test-results/test`. If a runner or toolchain is missing, the alert says what to install or which setting to change. Tests run against the saved file, and you get a warning if the buffer has unsaved changes. Runs time out after the configured test timeout (15 minutes by default); the whole process group is then stopped.
 
 ## Limitations
 
@@ -144,6 +158,8 @@ scripts/test.sh
   * It creates a temporary project (a Cargo crate, a `build.zig` project, or a `.kt` file).
   * It drives the extension's layer (`EditorCommandEngine` → `BridgeClient` → `BridgeServer` → `BridgeHandler` → `ServerManager` → server) and checks startup and initialization, diagnostics for a seeded syntax error, completion of a partial identifier, go to definition, and hover.
   * It then shuts the server down cleanly and checks that the process group is gone.
+* **Test-running unit tests:** test discovery for each language, output parsers (`zig test`, `zig build test`, libtest, nextest, JUnit XML, Gradle console), runner selection and command construction against a fake toolchain, missing-tool messages, and editor test markers.
+* **Test-running end-to-end tests** (`TestRunEndToEndTests`), one per language: a temporary project with one passing and one failing test is run through the bridge with **Run Tests in File** and **Run Test at Cursor**, checking statuses, failure output, `file:line` links, and markers. Each test skips if its toolchain is missing. The Kotlin test passes `--offline` when JUnit is already in the Gradle cache.
 
 ## Layout
 

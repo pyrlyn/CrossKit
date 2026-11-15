@@ -62,6 +62,9 @@ public enum EditorCommand: String, CaseIterable, Codable, Sendable {
     case hover
     case diagnostics
     case clearAnnotations
+    case showTests
+    case runTestsInFile
+    case runTestAtCursor
     case openSettings
 
     public var displayName: String {
@@ -73,6 +76,9 @@ public enum EditorCommand: String, CaseIterable, Codable, Sendable {
         case .hover: return "Show Hover Info"
         case .diagnostics: return "Show Diagnostics"
         case .clearAnnotations: return "Clear CrossKit Annotations"
+        case .showTests: return "Show Test Markers"
+        case .runTestsInFile: return "Run Tests in File"
+        case .runTestAtCursor: return "Run Test at Cursor"
         case .openSettings: return "Open CrossKit Settings"
         }
     }
@@ -108,7 +114,105 @@ public struct EditorCommandEngine: Sendable {
         case .findReferences: return findReferences(buffer, try await call(.references, buffer, transport))
         case .hover: return hover(buffer, try await call(.hover, buffer, transport))
         case .diagnostics: return diagnostics(buffer, try await call(.diagnostics, buffer, transport))
+        case .showTests: return try await tests(buffer, operation: .discoverTests, scope: nil, transport: transport)
+        case .runTestsInFile: return try await tests(buffer, operation: .runTests, scope: .file, transport: transport)
+        case .runTestAtCursor: return try await tests(buffer, operation: .runTests, scope: .cursor, transport: transport)
         }
+    }
+
+    /// Whether a command may run for minutes (the extension uses a longer bridge timeout).
+    public static func isLongRunning(_ command: EditorCommand) -> Bool {
+        command == .runTestsInFile || command == .runTestAtCursor
+    }
+
+    // MARK: Tests (CodeLens substitute: `// [CrossKit] ▶ …` markers above test functions)
+
+    static let testMarkerSymbols = ["▶", "✓", "✗", "○"]
+
+    public static func isTestMarker(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix(marker) else { return false }
+        let rest = trimmed.dropFirst(marker.count).trimmingCharacters(in: .whitespaces)
+        return testMarkerSymbols.contains { rest.hasPrefix($0) }
+    }
+
+    func tests(_ buffer: EditorBuffer, operation: BridgeOperation, scope: TestScope?, transport: BridgeTransport) async throws -> EditorOutcome {
+        // Old test markers are removed first; the request uses the buffer without them.
+        let markerLines = buffer.lines.indices.filter { Self.isTestMarker(buffer.lines[$0]) }
+        let markerSet = Set(markerLines)
+        let clean = buffer.lines.enumerated().filter { !markerSet.contains($0.offset) }.map(\.element)
+        let caret = buffer.selection.start
+        let caretLine = max(0, caret.line - markerLines.filter { $0 < caret.line }.count)
+        let request = BridgeRequest(operation: operation, text: clean.joined(), line: caretLine, character: caret.column,
+                                    contentUTI: buffer.contentUTI, filePath: buffer.filePath, testScope: scope)
+        let response = try await transport.send(request)
+        guard response.ok else { throw EditorCommandError.bridge(response.error ?? "CrossKit request failed") }
+
+        var operations: [BufferOperation] = markerLines.reversed().map { .replaceLines(start: $0, count: 1, with: []) }
+        var markers: [Int: String] = [:]   // clean line → marker text
+        let tests = response.tests ?? []
+        var message: String?
+        if let run = response.testRun {
+            for result in run.tests {
+                guard let line = result.line, clean.indices.contains(line) else { continue }
+                markers[line] = Self.describe(result)
+            }
+            message = Self.summary(run)
+        } else {
+            if tests.isEmpty { message = "No tests found in this file." }
+            for test in tests where clean.indices.contains(test.line) {
+                markers[test.line] = "▶ test \(test.name.isEmpty ? test.filter : test.name) — Editor › CrossKit › Run Test at Cursor"
+            }
+        }
+        var inserted = 0
+        for line in markers.keys.sorted(by: >) {
+            let anchor = Self.attributeStart(clean, line)
+            let indent = Self.indentation(of: clean[line])
+            operations.append(.replaceLines(start: anchor, count: 0, with: ["\(indent)\(Self.marker) \(markers[line]!)\n"]))
+            if anchor <= caretLine { inserted += 1 }
+        }
+        operations.append(.select(.caret(caretLine + inserted, caret.column)))
+        return EditorOutcome(operations: operations, message: message)
+    }
+
+    /// Markers go above attributes/annotations such as `#[test]` or `@Test`.
+    static func attributeStart(_ lines: [String], _ line: Int) -> Int {
+        var start = line
+        while start > 0 {
+            let previous = lines[start - 1].trimmingCharacters(in: .whitespaces)
+            guard previous.hasPrefix("#[") || previous.hasPrefix("@") else { break }
+            start -= 1
+        }
+        return start
+    }
+
+    static func describe(_ result: TestCaseResult) -> String {
+        let time = result.duration.map { String(format: " %.3fs", $0) } ?? ""
+        switch result.status {
+        case .passed: return "✓ passed\(time)"
+        case .skipped: return "○ skipped"
+        case .failed:
+            let first = result.output?.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+                .first { !$0.isEmpty }.map { " — " + String($0.prefix(140)) } ?? ""
+            return "✗ failed\(time)\(first)"
+        }
+    }
+
+    public static func summary(_ run: TestRunResult) -> String {
+        var lines = ["\(run.succeeded ? "✓" : "✗") \(run.language.displayName) · \(run.runner.displayName): \(run.summary)"]
+        let failures = run.tests.filter { $0.status == .failed }
+        for failure in failures.prefix(8) {
+            let location = failure.line.map { ":\($0 + 1)" } ?? ""
+            lines.append("✗ \(failure.name)\(location)")
+        }
+        if failures.count > 8 { lines.append("… and \(failures.count - 8) more") }
+        if run.tests.isEmpty, !run.succeeded {
+            let tail = run.output.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.suffix(6)
+            lines.append(contentsOf: tail)
+        }
+        if let warning = run.warning { lines.append("⚠︎ " + warning) }
+        lines.append("Details: CrossKit › Test Results")
+        return lines.joined(separator: "\n")
     }
 
     private func call(_ operation: BridgeOperation, _ buffer: EditorBuffer, _ transport: BridgeTransport) async throws -> BridgeResponse {

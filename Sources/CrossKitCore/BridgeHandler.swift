@@ -11,11 +11,15 @@ public final class BridgeHandler: @unchecked Sendable {
     private let scratchDirectory: URL
     public var documentResolver: DocumentResolver?
     public var openLocation: LocationOpener?
+    public var testService: TestService
+    /// Called with every finished test run (the host shows them in its Test Results window).
+    public var onTestRun: (@Sendable (TestRunResult) -> Void)?
 
     public init(manager: ServerManager, settings: SettingsStore, scratchDirectory: URL = SharedPaths.scratchDirectory) {
         self.manager = manager
         self.settings = settings
         self.scratchDirectory = scratchDirectory
+        self.testService = TestService(resolver: TestRunnerResolver(settings: settings))
     }
 
     public func handle(_ request: BridgeRequest) async -> BridgeResponse {
@@ -41,6 +45,10 @@ public final class BridgeHandler: @unchecked Sendable {
         if let feature = request.operation.feature, !settings.isFeatureEnabled(feature, for: language) {
             throw BridgeError.featureDisabled(feature, language)
         }
+        if request.operation == .discoverTests || request.operation == .runTests {
+            guard let file else { throw TestRunnerError.needsSavedFile }
+            return try await processTests(request, language: language, file: file.resolvingSymlinksInPath())
+        }
         let documentURL = try (file ?? WorkspaceResolver.scratchFile(for: language, text: request.text, in: scratchDirectory))
             .resolvingSymlinksInPath()
         let root = WorkspaceResolver.root(for: documentURL, language: language).resolvingSymlinksInPath()
@@ -58,7 +66,7 @@ public final class BridgeHandler: @unchecked Sendable {
         let timeout = language.requestTimeout
 
         switch request.operation {
-        case .ping:
+        case .ping, .discoverTests, .runTests:
             break
         case .completion:
             let result = try await warmRequest(client, "textDocument/completion", [
@@ -98,6 +106,61 @@ public final class BridgeHandler: @unchecked Sendable {
         }
         await manager.touch(language, root: root)
         return response
+    }
+
+    // MARK: Tests
+
+    private func processTests(_ request: BridgeRequest, language: Language, file: URL) async throws -> BridgeResponse {
+        var tests = testService.discover(language, file: file, text: request.text)
+        if language == .rust, let runnables = await rustRunnables(file: file, text: request.text, expectTests: !tests.isEmpty),
+           !runnables.isEmpty {
+            tests = runnables
+        }
+        var response = BridgeResponse()
+        response.language = language
+        response.filePath = file.path
+        response.rootPath = testService.resolver.projectRoot(for: file, language: language).path
+        response.tests = tests
+        if request.operation == .runTests {
+            let run = try await testService.run(language, file: file, text: request.text, scope: request.testScope ?? .file,
+                                                cursorLine: request.line, tests: tests)
+            onTestRun?(run)
+            response.testRun = run
+        }
+        return response
+    }
+
+    /// rust-analyzer's `experimental/runnables`: exact test paths plus the cargo arguments it would use.
+    private func rustRunnables(file: URL, text: String, expectTests: Bool) async -> [DiscoveredTest]? {
+        guard settings.isEnabled(.rust), await manager.resolveBinary(for: .rust) != nil else { return nil }
+        let root = WorkspaceResolver.root(for: file, language: .rust).resolvingSymlinksInPath()
+        guard let client = try? await manager.client(for: .rust, root: root) else { return nil }
+        let uri = LSPClient.normalizeURI(file.absoluteString)
+        guard (try? client.syncDocument(uri: uri, text: text)) != nil else { return nil }
+        var tests: [DiscoveredTest] = []
+        for _ in 0..<30 {
+            guard let result = try? await client.request("experimental/runnables", ["textDocument": ["uri": .string(uri)]],
+                                                         timeout: 30) else { return nil }
+            tests = Self.parseRunnables(result)
+            if !tests.isEmpty || !expectTests || Date().timeIntervalSince(client.startedAt) > 60 { break }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        return tests
+    }
+
+    static func parseRunnables(_ result: JSONValue) -> [DiscoveredTest] {
+        (result.arrayValue ?? []).compactMap { runnable in
+            guard let label = runnable["label"]?.stringValue, label.hasPrefix("test ") else { return nil }
+            let path = String(label.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+            let location = runnable["location"]
+            let line = (LSPConvert.range(location?["targetSelectionRange"]) ?? LSPConvert.range(location?["targetRange"]))?.startLine ?? 0
+            let args = runnable["args"]
+            let cargo = (args?["cargoArgs"]?.arrayValue ?? []).compactMap(\.stringValue)
+                + (args?["cargoExtraArgs"]?.arrayValue ?? []).compactMap(\.stringValue)
+            let exe = (args?["executableArgs"]?.arrayValue ?? []).compactMap(\.stringValue)
+            return DiscoveredTest(name: path.components(separatedBy: "::").last ?? path, filter: path, line: line,
+                                  cargoArgs: cargo.isEmpty ? nil : cargo, executableArgs: exe.isEmpty ? nil : exe)
+        }
     }
 
     /// Right after start, servers often answer `null`/`[]` while still indexing; retry briefly.
