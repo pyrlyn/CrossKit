@@ -41,6 +41,8 @@ struct SettingsView: View {
             ForEach(Language.allCases) { language in
                 LanguageSection(language: language)
             }
+
+            LaunchConfigurationsSection()
         }
         .formStyle(.grouped)
     }
@@ -101,6 +103,8 @@ struct LanguageSection: View {
                 }
 
                 TestSettings(language: language)
+
+                DebugSettings(language: language)
 
                 LabeledContent("Status") {
                     HStack(spacing: 6) {
@@ -189,5 +193,136 @@ struct TestSettings: View {
                 .frame(maxWidth: 260)
         }
         .disabled(!enabled)
+    }
+}
+
+struct DebugSettings: View {
+    let language: Language
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        let enabled = model.settings.isFeatureEnabled(.debug, for: language)
+        let kind = model.effectiveDebugger(language)
+        LabeledContent("Debugger") {
+            Picker("", selection: model.debuggerBinding(language)) {
+                Text("Auto-detect (\(model.debuggers.autoKind(for: language).displayName))").tag("auto")
+                ForEach(DebuggerKind.choices(for: language)) { kind in
+                    Text(kind.displayName).tag(kind.rawValue)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+        .disabled(!enabled)
+        LabeledContent("Debugger tools") {
+            VStack(alignment: .trailing, spacing: 2) {
+                if let custom = model.settings.debuggerPath(for: kind) {
+                    Text("custom \(kind.toolName): \(custom)").font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
+                }
+                ForEach(model.debugTools[language] ?? [], id: \.tool) { item in
+                    Text("\(item.tool): \(item.path ?? "not found")")
+                        .font(.caption.monospaced())
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(item.path == nil ? .orange : .secondary)
+                }
+                HStack {
+                    Button("Choose \(kind.toolName)…") { model.chooseDebuggerPath(for: kind) }
+                    Button("Use Auto-detect") { model.resetDebuggerPath(for: kind) }
+                        .disabled(model.settings.debuggerPath(for: kind) == nil)
+                }
+            }
+        }
+        .disabled(!enabled)
+        if language == .kotlin {
+            LabeledContent("JDWP port") {
+                TextField("5005", text: model.jdwpPortBinding)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+                    .help("Port the debugged JVM listens on; 0 picks a free port each time.")
+            }
+            .disabled(!enabled)
+        }
+    }
+}
+
+struct LaunchConfigurationsSection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Section {
+            if model.launchConfigurations.isEmpty {
+                Text("A configuration is created and saved automatically the first time you debug a project (Editor › CrossKit › Debug File at Cursor).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(model.launchConfigurations) { configuration in
+                LaunchConfigurationEditor(configuration: configuration)
+            }
+        } header: {
+            Text("Launch Configurations")
+        }
+    }
+}
+
+struct LaunchConfigurationEditor: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var config: LaunchConfiguration
+    @State private var arguments: String
+    @State private var environment: String
+    @State private var testArguments: String
+
+    init(configuration: LaunchConfiguration) {
+        _config = State(initialValue: configuration)
+        _arguments = State(initialValue: LaunchConfiguration.joinArguments(configuration.arguments))
+        _environment = State(initialValue: LaunchConfiguration.formatEnvironment(configuration.environment))
+        _testArguments = State(initialValue: LaunchConfiguration.joinArguments(configuration.testArguments))
+    }
+
+    var body: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                LabeledContent(config.language == .kotlin ? "Main class" : "Program") {
+                    TextField(config.language == .kotlin ? "auto (e.g. demo.MainKt)" : "auto (built by CrossKit)", text: $config.program)
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledContent("Arguments") {
+                    TextField("e.g. --port 8080 \"two words\"", text: $arguments).textFieldStyle(.roundedBorder)
+                }
+                LabeledContent("Environment") {
+                    TextEditor(text: $environment)
+                        .font(.caption.monospaced())
+                        .frame(height: 54)
+                        .overlay(alignment: .topLeading) {
+                            if environment.isEmpty {
+                                Text("KEY=VALUE, one per line").font(.caption).foregroundStyle(.tertiary).padding(4).allowsHitTesting(false)
+                            }
+                        }
+                }
+                LabeledContent("Working directory") {
+                    TextField(config.projectRoot, text: $config.workingDirectory).textFieldStyle(.roundedBorder)
+                }
+                LabeledContent("Test binary arguments") {
+                    TextField(config.language == .rust ? "e.g. --include-ignored" : "", text: $testArguments).textFieldStyle(.roundedBorder)
+                }
+                .disabled(config.language == .kotlin)
+                Toggle("Build before launching", isOn: $config.buildBeforeLaunch)
+                    .help("Zig projects with build.zig run `zig build install` first. Loose Zig files, Cargo and Gradle projects are always built.")
+                HStack {
+                    Spacer()
+                    Button("Delete", role: .destructive) { model.delete(config) }
+                }
+            }
+            .padding(.vertical, 4)
+        } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(config.language.displayName) · \(config.projectName)")
+                Text(config.projectRoot).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+        }
+        .onChange(of: config) { _, value in model.save(value) }
+        .onChange(of: arguments) { _, value in config.arguments = LaunchConfiguration.splitArguments(value) }
+        .onChange(of: environment) { _, value in config.environment = LaunchConfiguration.parseEnvironment(value) }
+        .onChange(of: testArguments) { _, value in config.testArguments = LaunchConfiguration.splitArguments(value) }
     }
 }

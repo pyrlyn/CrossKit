@@ -125,6 +125,12 @@ targets:
                 XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.runTestAtCursor
                 XCSourceEditorCommandName: Run Test at Cursor
               - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.debugFileAtCursor
+                XCSourceEditorCommandName: Debug File at Cursor
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.debugTestAtCursor
+                XCSourceEditorCommandName: Debug Test at Cursor
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
                 XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.openSettings
                 XCSourceEditorCommandName: Open CrossKit Settings
 

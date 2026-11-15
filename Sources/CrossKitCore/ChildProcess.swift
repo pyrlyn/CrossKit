@@ -50,6 +50,7 @@ public final class ChildProcess: @unchecked Sendable {
     private var exitCode: Int32?
     private let exited = DispatchSemaphore(value: 0)
     private let writeLock = NSLock()
+    private var stdinClosed = false
 
     /// - Parameters:
     ///   - onStdout/onStderr: called on background threads with chunks; empty Data signals EOF.
@@ -124,7 +125,7 @@ public final class ChildProcess: @unchecked Sendable {
     }
 
     deinit {
-        close(stdinFD)
+        closeStdin()
     }
 
     private static func startReader(fd: Int32, name: String, handler: @escaping @Sendable (Data) -> Void) {
@@ -159,6 +160,7 @@ public final class ChildProcess: @unchecked Sendable {
 
     public func write(_ data: Data) throws {
         writeLock.lock(); defer { writeLock.unlock() }
+        guard !stdinClosed else { throw ChildProcessError.writeFailed(EBADF) }
         try data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             guard var pointer = raw.baseAddress else { return }
             var remaining = raw.count
@@ -176,6 +178,8 @@ public final class ChildProcess: @unchecked Sendable {
 
     public func closeStdin() {
         writeLock.lock(); defer { writeLock.unlock() }
+        guard !stdinClosed else { return }
+        stdinClosed = true
         close(stdinFD)
     }
 

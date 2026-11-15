@@ -38,6 +38,7 @@ struct MenuBarContent: View {
             Text("\(language.displayName): \(status.state.rawValue)")
         }
         Divider()
+        Button("Debugger…") { DebuggerWindow.show(model: model) }
         Button("Test Results…") {
             openWindow(id: "tests")
             NSApp.activate(ignoringOtherApps: true)

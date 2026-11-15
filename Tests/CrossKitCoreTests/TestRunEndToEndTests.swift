@@ -106,7 +106,9 @@ final class TestRunEndToEndTests: XCTestCase {
                     "src/main/kotlin/demo/Calc.kt": "package demo\n\nfun add(a: Int, b: Int) = a + b\n",
                     "src/test/kotlin/demo/CalcTest.kt": test],
             testFile: "src/test/kotlin/demo/CalcTest.kt", passing: "demo.CalcTest.adds", failing: "demo.CalcTest.fails on purpose",
-            failureText: "math is hard", cursorLine: 8, arguments: offline ? ["--offline"] : []))
+            failureText: "math is hard", cursorLine: 8,
+            // No daemons, so the test leaves no processes behind.
+            arguments: ["--no-daemon", "-Pkotlin.compiler.execution.strategy=in-process"] + (offline ? ["--offline"] : [])))
     }
 
     // MARK: Driver

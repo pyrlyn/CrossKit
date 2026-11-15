@@ -87,6 +87,7 @@ public enum Feature: String, CaseIterable, Codable, Identifiable, Sendable {
     case diagnostics
     case hover
     case tests
+    case debug
 
     public var id: String { rawValue }
 
@@ -98,6 +99,7 @@ public enum Feature: String, CaseIterable, Codable, Identifiable, Sendable {
         case .diagnostics: return "Diagnostics"
         case .hover: return "Hover"
         case .tests: return "Run Tests"
+        case .debug: return "Debugging"
         }
     }
 }

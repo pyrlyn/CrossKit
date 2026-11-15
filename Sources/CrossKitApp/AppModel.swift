@@ -18,6 +18,10 @@ final class AppModel: ObservableObject {
     @Published var testRuns: [TestRunResult] = []
     @Published var testTools: [Language: [(tool: String, path: String?)]] = [:]
     let toolchain = TestToolchain()
+    let debuggers = DebuggerLocator()
+    @Published var debugSessions: [DebugSessionSnapshot] = []
+    @Published var debugTools: [Language: [(tool: String, path: String?)]] = [:]
+    @Published var launchConfigurations: [LaunchConfiguration] = []
 
     private init() {
         manager = ServerManager(settings: settings, locator: locator)
@@ -26,6 +30,9 @@ final class AppModel: ObservableObject {
         handler.openLocation = { location in XcodeDocumentLocator.open(location) }
         handler.onTestRun = { run in
             Task { @MainActor in AppModel.shared.record(run) }
+        }
+        handler.debugService.onChange = { snapshot in
+            Task { @MainActor in AppModel.shared.updateDebugSession(snapshot) }
         }
         for language in Language.allCases {
             var status = ServerStatus(state: settings.isEnabled(language) ? .stopped : .disabled)
@@ -61,7 +68,9 @@ final class AppModel: ObservableObject {
         for language in Language.allCases {
             detectedPaths[language] = locator.candidates(for: language).map(\.path)
             testTools[language] = toolchain.describe(language)
+            debugTools[language] = debuggers.describe(language)
         }
+        launchConfigurations = settings.launchConfigurations().sorted { $0.id < $1.id }
     }
 
     // MARK: Tests
@@ -196,7 +205,9 @@ final class AppModel: ObservableObject {
         server?.stop()
         let manager = self.manager
         let done = DispatchSemaphore(value: 0)
+        let debugService = handler.debugService
         Task.detached {
+            await debugService.stopAll()
             await manager.shutdownAll()
             done.signal()
         }
@@ -206,5 +217,103 @@ final class AppModel: ObservableObject {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         ProcessRegistry.killAll()
+    }
+
+    // MARK: Debugging
+
+    func updateDebugSession(_ snapshot: DebugSessionSnapshot) {
+        let isNew = !debugSessions.contains { $0.id == snapshot.id }
+        if let index = debugSessions.firstIndex(where: { $0.id == snapshot.id }) {
+            debugSessions[index] = snapshot
+        } else {
+            debugSessions.insert(snapshot, at: 0)
+            if debugSessions.count > 30 { debugSessions.removeLast(debugSessions.count - 30) }
+        }
+        launchConfigurations = settings.launchConfigurations().sorted { $0.id < $1.id }
+        if isNew || snapshot.state == .stopped || snapshot.state == .waitingForDebugger {
+            DebuggerWindow.show(model: self, select: snapshot.id)
+        }
+    }
+
+    enum DebugAction { case resume, stepOver, stepIn, stepOut, pause, stop }
+
+    func perform(_ action: DebugAction, on id: String) {
+        guard let session = handler.debugService.session(id) else { return }
+        Task {
+            do {
+                switch action {
+                case .resume: try await session.resume()
+                case .stepOver: try await session.stepOver()
+                case .stepIn: try await session.stepIn()
+                case .stepOut: try await session.stepOut()
+                case .pause: try await session.pause()
+                case .stop: await session.stop()
+                }
+            } catch {
+                session.appendOutput("CrossKit: \(error.localizedDescription)\n")
+            }
+        }
+    }
+
+    func clearFinishedSessions() {
+        debugSessions.removeAll { !$0.state.isActive && $0.state != .waitingForDebugger }
+    }
+
+    func openInXcode(file: String, line: Int) {
+        XcodeDocumentLocator.open(BridgeLocation(path: file, range: BridgeRange(startLine: max(line - 1, 0), startCharacter: 0,
+                                                                              endLine: max(line - 1, 0), endCharacter: 0)))
+    }
+
+    func debuggerBinding(_ language: Language) -> Binding<String> {
+        Binding(
+            get: { self.settings.debugger(for: language)?.rawValue ?? "auto" },
+            set: { value in
+                self.objectWillChange.send()
+                self.settings.setDebugger(DebuggerKind(rawValue: value), for: language)
+            })
+    }
+
+    func effectiveDebugger(_ language: Language) -> DebuggerKind {
+        settings.debugger(for: language) ?? debuggers.autoKind(for: language)
+    }
+
+    func chooseDebuggerPath(for kind: DebuggerKind) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose \(kind.toolName)"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.treatsFilePackagesAsDirectories = true
+        panel.showsHiddenFiles = true
+        if panel.runModal() == .OK, let url = panel.url {
+            objectWillChange.send()
+            settings.setDebuggerPath(url.path, for: kind)
+        }
+    }
+
+    func resetDebuggerPath(for kind: DebuggerKind) {
+        objectWillChange.send()
+        settings.setDebuggerPath(nil, for: kind)
+    }
+
+    var jdwpPortBinding: Binding<String> {
+        Binding(
+            get: { String(self.settings.jdwpPort) },
+            set: { value in
+                guard let port = Int(value.trimmingCharacters(in: .whitespaces)), (0...65535).contains(port) else { return }
+                self.objectWillChange.send()
+                self.settings.jdwpPort = port
+            })
+    }
+
+    func save(_ configuration: LaunchConfiguration) {
+        var updated = configuration
+        updated.updatedAt = Date()
+        settings.saveLaunchConfiguration(updated)
+        launchConfigurations = settings.launchConfigurations().sorted { $0.id < $1.id }
+    }
+
+    func delete(_ configuration: LaunchConfiguration) {
+        settings.deleteLaunchConfiguration(id: configuration.id)
+        launchConfigurations = settings.launchConfigurations().sorted { $0.id < $1.id }
     }
 }
