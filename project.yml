@@ -1,0 +1,144 @@
+# Generate the Xcode project with:  scripts/generate.sh  (XcodeGen 2.46, via mise)
+name: CrossKit
+options:
+  bundleIdPrefix: dev.pyrlyn
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    # Xcode refuses App Group entitlements without a provisioning profile, so Xcode's own signing is
+    # off and scripts/codesign-bundle.sh signs the finished app (ad-hoc by default, see README).
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEAD_CODE_STRIPPING: YES
+targets:
+  CrossKitCore:
+    type: framework
+    platform: macOS
+    sources: [Sources/CrossKitCore]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.pyrlyn.CrossKit.Core
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        DEFINES_MODULE: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @loader_path/Frameworks"
+
+  CrossKit:
+    type: application
+    platform: macOS
+    sources: [Sources/CrossKitApp]
+    dependencies:
+      - target: CrossKitCore
+        embed: true
+      - target: CrossKitExtension
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: CrossKit
+        PRODUCT_BUNDLE_IDENTIFIER: dev.pyrlyn.CrossKit
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+    info:
+      path: Sources/CrossKitApp/Info.plist
+      properties:
+        CFBundleDisplayName: CrossKit
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSAppleEventsUsageDescription: CrossKit asks Xcode which source file is being edited so language servers see the right project.
+        NSHumanReadableCopyright: "Copyright © 2026 pyrlyn"
+    postBuildScripts:
+      - name: Code sign bundle
+        basedOnDependencyAnalysis: false
+        script: exec "$SRCROOT/scripts/codesign-bundle.sh"
+
+  CrossKitExtension:
+    type: xcode-extension
+    platform: macOS
+    sources: [Sources/CrossKitExtension]
+    dependencies:
+      - target: CrossKitCore
+        embed: false
+    settings:
+      base:
+        PRODUCT_NAME: CrossKitExtension
+        PRODUCT_BUNDLE_IDENTIFIER: dev.pyrlyn.CrossKit.Extension
+        FRAMEWORK_SEARCH_PATHS: "$(inherited) $(DEVELOPER_FRAMEWORKS_DIR)"
+        OTHER_LDFLAGS: "$(inherited) -framework XcodeKit"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks"
+    postCompileScripts:
+      - name: Embed XcodeKit
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          dest="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+          mkdir -p "$dest"
+          rsync -a --delete "$DEVELOPER_FRAMEWORKS_DIR/XcodeKit.framework" "$dest/"
+    info:
+      path: Sources/CrossKitExtension/Info.plist
+      properties:
+        CFBundleDisplayName: CrossKit
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSHumanReadableCopyright: "Copyright © 2026 pyrlyn"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.dt.Xcode.extension.source-editor
+          NSExtensionAttributes:
+            XCSourceEditorExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SourceEditorExtension
+            XCSourceEditorCommandDefinitions:
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.complete
+                XCSourceEditorCommandName: Complete at Cursor
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.listCompletions
+                XCSourceEditorCommandName: List Completions
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.goToDefinition
+                XCSourceEditorCommandName: Go to Definition
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.findReferences
+                XCSourceEditorCommandName: Find References
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.hover
+                XCSourceEditorCommandName: Show Hover Info
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.diagnostics
+                XCSourceEditorCommandName: Show Diagnostics
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.clearAnnotations
+                XCSourceEditorCommandName: Clear CrossKit Annotations
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.openSettings
+                XCSourceEditorCommandName: Open CrossKit Settings
+
+  CrossKitCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/CrossKitCoreTests]
+    dependencies:
+      - target: CrossKitCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.pyrlyn.CrossKit.CoreTests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  CrossKit:
+    build:
+      targets:
+        CrossKit: all
+        CrossKitCore: all
+        CrossKitExtension: all
+        CrossKitCoreTests: [test]
+    test:
+      targets:
+        - CrossKitCoreTests
+      gatherCoverageData: false
