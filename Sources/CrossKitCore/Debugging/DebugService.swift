@@ -122,7 +122,9 @@ public final class DebugService: @unchecked Sendable {
                 let address = "127.0.0.1:\(plan.jdwpPort)"
                 try await startJVM(session: session, plan: plan, command: jvmCommand ?? [], address: address)
                 let bpCommand = "stop at \(plan.jvmBreakpointClass ?? program):\((bp?.line ?? 0) + 1)"
-                let jdb = planner.debuggers.jdb()?.path ?? "jdb"
+                // jdb from the same JDK as the chosen java (a custom java path in settings included).
+                let sibling = URL(fileURLWithPath: plan.debuggerPath).deletingLastPathComponent().appendingPathComponent("jdb").path
+                let jdb = FileManager.default.isExecutableFile(atPath: sibling) ? sibling : planner.debuggers.jdb()?.path ?? "jdb"
                 let attach = "\(Self.shellQuote(jdb)) -attach \(address)"
                 session.update { $0.jdwpAddress = address; $0.attachCommand = attach; $0.state = .waitingForDebugger }
                 info.jdwpAddress = address
@@ -222,7 +224,7 @@ public final class DebugService: @unchecked Sendable {
         let script = directory.appendingPathComponent("CrossKit Debug.command")
         try """
         #!/bin/sh
-        # CrossKit: \(plan.title)
+        # CrossKit: \(Self.commentLine(plan.title))
         cd \(Self.shellQuote(plan.workingDirectory))
         exec \(Self.shellQuote(plan.debuggerPath)) -s \(Self.shellQuote(commands.path))
 
@@ -239,9 +241,9 @@ public final class DebugService: @unchecked Sendable {
         let script = directory.appendingPathComponent("CrossKit Debug.command")
         try """
         #!/bin/sh
-        # CrossKit: \(plan.title)
+        # CrossKit: \(Self.commentLine(plan.title))
         cd \(Self.shellQuote(directory.path))
-        exec \(jdb.hasPrefix("'") ? jdb : Self.shellQuote(jdb)) -sourcepath \(Self.shellQuote(sources)) -attach \(address)
+        exec \(Self.shellQuote(jdb)) -sourcepath \(Self.shellQuote(sources)) -attach \(address)
 
         """.write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
@@ -268,6 +270,11 @@ public final class DebugService: @unchecked Sendable {
         let disk = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
         return disk.trimmingCharacters(in: .whitespacesAndNewlines) == text.trimmingCharacters(in: .whitespacesAndNewlines)
             ? nil : "The editor buffer has unsaved changes; the debugger uses the saved file, so lines may not match."
+    }
+
+    /// Text for a `#` comment in a shell script: a line break would end the comment and run the rest.
+    static func commentLine(_ s: String) -> String {
+        s.components(separatedBy: .newlines).joined(separator: " ")
     }
 
     public static func shellQuote(_ s: String) -> String {

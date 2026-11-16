@@ -237,13 +237,23 @@ public final class DebugSession: @unchecked Sendable {
             jvm.terminateGroup()
             if !jvm.waitForExit(timeout: 3) { jvm.killGroup(); _ = jvm.waitForExit(timeout: 3) }
         }
-        if let pid = snapshot.debuggeePID, kill(pid_t(pid), 0) == 0 { kill(pid_t(pid), SIGKILL) }
+        if let pid = snapshot.debuggeePID { Self.killIfRunning(pid: pid, program: snapshot.program) }
         update { if $0.state.isActive { $0.state = .exited } }
     }
 
     private func shutdownAdapter() async {
         guard let dap else { return }
         await Task.detached { dap.terminate() }.value
-        if let pid = snapshot.debuggeePID, kill(pid_t(pid), 0) == 0 { kill(pid_t(pid), SIGKILL) }
+        if let pid = snapshot.debuggeePID { Self.killIfRunning(pid: pid, program: snapshot.program) }
+    }
+
+    /// SIGKILLs a leftover debuggee, but only while that pid still runs the session's program: once the
+    /// debuggee exited, its pid can be reused by any other process of the user.
+    static func killIfRunning(pid: Int, program: String) {
+        guard pid > 0, !program.isEmpty, kill(pid_t(pid), 0) == 0 else { return }
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid_t(pid), &buffer, UInt32(buffer.count)) > 0 else { return }
+        guard LaunchPlanner.canonicalPath(String(cString: buffer)) == LaunchPlanner.canonicalPath(program) else { return }
+        kill(pid_t(pid), SIGKILL)
     }
 }

@@ -193,6 +193,8 @@ public final class ChildProcess: @unchecked Sendable {
         return false
     }
 
-    public func terminateGroup() { kill(-pid, SIGTERM) }
-    public func killGroup() { kill(-pid, SIGKILL) }
+    /// Signal the process group. No-ops once the leader has been reaped (its group was already killed then),
+    /// because the pid may by now belong to an unrelated process.
+    public func terminateGroup() { if isRunning { kill(-pid, SIGTERM) } }
+    public func killGroup() { if isRunning { kill(-pid, SIGKILL) } }
 }
