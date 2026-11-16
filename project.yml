@@ -116,6 +116,15 @@ targets:
                 XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.clearAnnotations
                 XCSourceEditorCommandName: Clear CrossKit Annotations
               - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.showTests
+                XCSourceEditorCommandName: Show Test Markers
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.runTestsInFile
+                XCSourceEditorCommandName: Run Tests in File
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.runTestAtCursor
+                XCSourceEditorCommandName: Run Test at Cursor
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
                 XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.openSettings
                 XCSourceEditorCommandName: Open CrossKit Settings
 

@@ -15,6 +15,12 @@ struct CrossKitApp: App {
         }
         .windowResizability(.contentMinSize)
 
+        Window("CrossKit Test Results", id: "tests") {
+            TestResultsView()
+                .environmentObject(model)
+                .frame(minWidth: 760, minHeight: 480)
+        }
+
         MenuBarExtra("CrossKit", systemImage: "chevron.left.forwardslash.chevron.right") {
             MenuBarContent()
                 .environmentObject(model)
@@ -32,6 +38,10 @@ struct MenuBarContent: View {
             Text("\(language.displayName): \(status.state.rawValue)")
         }
         Divider()
+        Button("Test Results…") {
+            openWindow(id: "tests")
+            NSApp.activate(ignoringOtherApps: true)
+        }
         Button("Settings…") {
             openWindow(id: "settings")
             NSApp.activate(ignoringOtherApps: true)

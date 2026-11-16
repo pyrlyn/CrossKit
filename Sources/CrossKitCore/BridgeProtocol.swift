@@ -1,7 +1,7 @@
 import Foundation
 
 public enum BridgeOperation: String, Codable, Sendable {
-    case ping, completion, definition, references, hover, diagnostics
+    case ping, completion, definition, references, hover, diagnostics, discoverTests, runTests
 
     public var feature: Feature? {
         switch self {
@@ -11,6 +11,7 @@ public enum BridgeOperation: String, Codable, Sendable {
         case .references: return .references
         case .hover: return .hover
         case .diagnostics: return .diagnostics
+        case .discoverTests, .runTests: return .tests
         }
     }
 }
@@ -91,9 +92,11 @@ public struct BridgeRequest: Codable, Equatable, Sendable {
     public var character: Int
     public var contentUTI: String
     public var filePath: String?
+    public var testScope: TestScope?
 
     public init(operation: BridgeOperation, text: String = "", line: Int = 0, character: Int = 0,
-                contentUTI: String = "", filePath: String? = nil) {
+                contentUTI: String = "", filePath: String? = nil, testScope: TestScope? = nil) {
+        self.testScope = testScope
         self.operation = operation
         self.text = text
         self.line = line
@@ -114,6 +117,8 @@ public struct BridgeResponse: Codable, Equatable, Sendable {
     public var hover: String?
     public var diagnostics: [BridgeDiagnostic]?
     public var diagnosticsReceived: Bool?
+    public var tests: [DiscoveredTest]?
+    public var testRun: TestRunResult?
 
     public init(ok: Bool = true, error: String? = nil) {
         self.ok = ok

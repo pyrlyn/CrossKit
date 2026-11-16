@@ -15,12 +15,18 @@ final class AppModel: ObservableObject {
     @Published var statuses: [Language: ServerStatus] = [:]
     @Published var detectedPaths: [Language: [String]] = [:]
     @Published var bridgeError: String?
+    @Published var testRuns: [TestRunResult] = []
+    @Published var testTools: [Language: [(tool: String, path: String?)]] = [:]
+    let toolchain = TestToolchain()
 
     private init() {
         manager = ServerManager(settings: settings, locator: locator)
         handler = BridgeHandler(manager: manager, settings: settings)
         handler.documentResolver = { request, language in XcodeDocumentLocator.resolve(request, language: language) }
         handler.openLocation = { location in XcodeDocumentLocator.open(location) }
+        handler.onTestRun = { run in
+            Task { @MainActor in AppModel.shared.record(run) }
+        }
         for language in Language.allCases {
             var status = ServerStatus(state: settings.isEnabled(language) ? .stopped : .disabled)
             status.binaryPath = nil
@@ -54,7 +60,60 @@ final class AppModel: ObservableObject {
     func refreshDetection() {
         for language in Language.allCases {
             detectedPaths[language] = locator.candidates(for: language).map(\.path)
+            testTools[language] = toolchain.describe(language)
         }
+    }
+
+    // MARK: Tests
+
+    func record(_ run: TestRunResult) {
+        testRuns.insert(run, at: 0)
+        if testRuns.count > 50 { testRuns.removeLast(testRuns.count - 50) }
+    }
+
+    func testRunnerBinding(_ language: Language) -> Binding<String> {
+        Binding(
+            get: { self.settings.testRunner(for: language)?.rawValue ?? "auto" },
+            set: { value in
+                self.objectWillChange.send()
+                self.settings.setTestRunner(TestRunnerKind(rawValue: value), for: language)
+            })
+    }
+
+    func testArgumentsBinding(_ language: Language) -> Binding<String> {
+        Binding(
+            get: { self.settings.testArguments(for: language).joined(separator: " ") },
+            set: { value in
+                self.objectWillChange.send()
+                self.settings.setTestArguments(value.split(separator: " ").map(String.init), for: language)
+            })
+    }
+
+    var testTimeoutMinutes: Binding<Double> {
+        Binding(
+            get: { self.settings.testTimeout / 60 },
+            set: { minutes in
+                self.objectWillChange.send()
+                self.settings.testTimeout = max(1, minutes) * 60
+            })
+    }
+
+    func chooseTestExecutable(for language: Language) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose test tool for \(language.displayName)"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.treatsFilePackagesAsDirectories = true
+        panel.showsHiddenFiles = true
+        if panel.runModal() == .OK, let url = panel.url {
+            objectWillChange.send()
+            settings.setTestExecutablePath(url.path, for: language)
+        }
+    }
+
+    func resetTestExecutable(for language: Language) {
+        objectWillChange.send()
+        settings.setTestExecutablePath(nil, for: language)
     }
 
     /// Path that will be used: custom if set, otherwise the first auto-detected one.

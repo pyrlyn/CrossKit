@@ -86,6 +86,30 @@
 					<key>XCSourceEditorCommandClassName</key>
 					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
 					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.showTests</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Show Test Markers</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.runTestsInFile</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Run Tests in File</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.runTestAtCursor</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Run Test at Cursor</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
 					<string>dev.pyrlyn.CrossKit.Extension.openSettings</string>
 					<key>XCSourceEditorCommandName</key>
 					<string>Open CrossKit Settings</string>
