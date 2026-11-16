@@ -114,6 +114,17 @@ final class DebugUnitTests: XCTestCase {
         }
     }
 
+    func testZigPlanUsesZigChosenInSettings() throws {
+        try makeExec("Developer/usr/bin/lldb-dap")
+        try makeExec("mise/installs/zig/0.17.1/zig")
+        try makeExec("tools/zig")
+        settings.setTestExecutablePath(home.appendingPathComponent("tools/zig").path, for: .zig)
+        let text = "pub fn main() void {}\n"
+        let file = try write("loose/main.zig", text)
+        let plan = try planner.plan(language: .zig, file: file, text: text, cursorLine: 0, target: .file)
+        XCTAssertEqual(plan.build.first?.first, home.appendingPathComponent("tools/zig").path)
+    }
+
     func testRustPlans() throws {
         try makeExec("Developer/usr/bin/lldb")
         try makeExec(".cargo/bin/cargo")
@@ -243,6 +254,40 @@ final class DebugUnitTests: XCTestCase {
         """)
         XCTAssertEqual(DebugService.shellQuote("/usr/bin/lldb"), "/usr/bin/lldb")
         XCTAssertEqual(DebugService.shellQuote("it's here"), "'it'\\''s here'")
+    }
+
+    func testJDBScriptQuotesAndKeepsTitleInComment() throws {
+        let plan = LaunchPlan(language: .kotlin, target: .test, debugger: .jdb, debuggerPath: "/jdk/bin/java", projectRoot: "/p",
+                              build: [], programSource: .path(""), arguments: [], environment: [:], workingDirectory: "/p",
+                              breakpoints: [], title: "weird\ntouch /tmp/crosskit-pwned", jdwpPort: 0)
+        let dir = home.appendingPathComponent("session")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let service = DebugService(planner: planner, terminalLauncher: { _ in })
+        let script = try String(contentsOf: service.writeJDBScript(jdb: "'/opt/my jdk/jdb", address: "127.0.0.1:5005",
+                                                                   breakpoint: "stop at A:1", plan: plan, directory: dir), encoding: .utf8)
+        let lines = script.components(separatedBy: "\n")
+        XCTAssertTrue(lines.contains("# CrossKit: weird touch /tmp/crosskit-pwned"), script)
+        XCTAssertFalse(lines.contains { $0.hasPrefix("touch") }, script)
+        XCTAssertTrue(script.contains("exec ''\\''/opt/my jdk/jdb' -sourcepath"), script)
+        var lldbPlan = plan
+        lldbPlan.debugger = .lldb
+        let lldb = try String(contentsOf: service.writeLLDBScript(plan: lldbPlan, program: "/p/app", directory: dir), encoding: .utf8)
+        XCTAssertFalse(lldb.components(separatedBy: "\n").contains { $0.hasPrefix("touch") }, lldb)
+    }
+
+    func testLeftoverDebuggeeIsKilledOnlyIfItStillRunsTheProgram() throws {
+        let process = try ChildProcess(executable: "/bin/sleep", arguments: ["30"], environment: [:], currentDirectory: nil,
+                                       onStdout: { _ in }, onStderr: { _ in }, onExit: { _ in })
+        defer { process.killGroup(); _ = process.waitForExit(timeout: 3) }
+        // A reused pid running something else is left alone.
+        DebugSession.killIfRunning(pid: Int(process.pid), program: "/usr/bin/true")
+        XCTAssertFalse(process.waitForExit(timeout: 0.3))
+        DebugSession.killIfRunning(pid: Int(process.pid), program: "/bin/sleep")
+        XCTAssertTrue(process.waitForExit(timeout: 3))
+        // After the leader was reaped, group signals are no-ops (the pid may belong to someone else by now).
+        XCTAssertFalse(process.isRunning)
+        process.terminateGroup()
+        process.killGroup()
     }
 
     func testCargoArtifactParsing() {

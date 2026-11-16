@@ -180,7 +180,13 @@ public struct TestRunnerResolver: Sendable {
             }
             reports = reportsDir.path
         }
-        args += settings.testArguments(for: language)
+        let extra = settings.testArguments(for: language)
+        if kind == .cargoTest, let separator = args.firstIndex(of: "--") {
+            // Extra arguments are for cargo (e.g. `--release`); everything after `--` goes to the test binary.
+            args.insert(contentsOf: extra, at: separator)
+        } else {
+            args += extra
+        }
         return TestCommand(kind: kind, executable: exe.path, arguments: args, workingDirectory: root.path,
                            environment: environment(language: language, executable: exe), reportsDirectory: reports)
     }

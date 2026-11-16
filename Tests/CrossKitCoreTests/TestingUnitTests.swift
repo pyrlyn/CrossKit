@@ -18,6 +18,13 @@ final class TestDiscoveryTests: XCTestCase {
         XCTAssertEqual(tests.map(\.line), [2, 4, 6])
     }
 
+    func testZigDiscoveryDecodesEscapedNames() {
+        let text = #"test "says \"hi\" \\ done" {"# + "\n}\n"
+        let tests = TestDiscovery.discover(.zig, text: text, filePath: "/p/main.zig", root: URL(fileURLWithPath: "/p"))
+        XCTAssertEqual(tests.map(\.filter), [#"says "hi" \ done"#])
+        XCTAssertEqual(TestDiscovery.unescapeZigString(#"a\tb\x41\u{e9}"#), "a\tbA\u{e9}")
+    }
+
     func testRustDiscoveryWithModulesAndFilePath() {
         let text = """
         pub fn add(a: i32, b: i32) -> i32 { a + b }
@@ -207,6 +214,24 @@ final class TestResultParserTests: XCTestCase {
         XCTAssertEqual(results[1].duration, 0.001)
     }
 
+    func testGradleUpToDateTestTaskReusesItsReports() throws {
+        // A second run of unchanged, passing tests: Gradle skips the task and writes no new XML.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("crosskit-junit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let report = dir.appendingPathComponent("TEST-demo.CalcTest.xml")
+        try #"<testsuite name="demo.CalcTest"><testcase name="adds()" classname="demo.CalcTest" time="0.001"/></testsuite>"#
+            .write(to: report, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: report.path)
+        let upToDate = "> Task :lib:compileTestKotlin UP-TO-DATE\n> Task :lib:test UP-TO-DATE\n\nBUILD SUCCESSFUL in 1s\n"
+        let results = TestResultParser.parse(kind: .gradle, output: upToDate, reportsDirectory: dir.path, since: Date())
+        XCTAssertEqual(results.map(\.name), ["demo.CalcTest.adds"])
+        XCTAssertEqual(results.map(\.status), [.passed])
+        XCTAssertTrue(TestResultParser.gradleTestTaskSkipped("> Task :jvmTest FROM-CACHE\n"))
+        // A task that ran must not pick up stale reports.
+        XCTAssertEqual(TestResultParser.parse(kind: .gradle, output: "> Task :lib:test\n", reportsDirectory: dir.path, since: Date()), [])
+    }
+
     func testGradleConsoleFallback() {
         let results = TestResultParser.gradleConsole("demo.CalcTest > adds() PASSED\ndemo.CalcTest > fails() FAILED\n")
         XCTAssertEqual(results.map(\.name), ["demo.CalcTest.adds", "demo.CalcTest.fails"])
@@ -295,6 +320,13 @@ final class TestRunnerResolverTests: XCTestCase {
         ra.executableArgs = ["math::tests::adds", "--exact", "--show-output"]
         let fromRA = try resolver.command(language: .rust, file: file, scope: .cursor, tests: [ra], cursorTest: ra)
         XCTAssertEqual(fromRA.arguments, ["test", "--package", "sample", "--lib", "--", "math::tests::adds", "--exact", "--show-output"])
+        // Extra test arguments are cargo options: they go before `--`, not to the test binary.
+        settings.setTestArguments(["--release"], for: .rust)
+        XCTAssertEqual(try resolver.command(language: .rust, file: file, scope: .file, tests: [test], cursorTest: nil).arguments,
+                       ["test", "--lib", "--release", "--", "math::"])
+        XCTAssertEqual(try resolver.command(language: .rust, file: file, scope: .cursor, tests: [ra], cursorTest: ra).arguments,
+                       ["test", "--package", "sample", "--lib", "--release", "--", "math::tests::adds", "--exact", "--show-output"])
+        settings.setTestArguments([], for: .rust)
 
         try makeExec("mise/installs/cargo-cargo-nextest/0.9.148/bin/cargo-nextest")
         let nextest = try resolver.command(language: .rust, file: file, scope: .cursor, tests: [ra], cursorTest: ra)

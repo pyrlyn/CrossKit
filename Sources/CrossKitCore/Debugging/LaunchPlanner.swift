@@ -125,7 +125,8 @@ public struct LaunchPlanner: Sendable {
 
     private func planZig(_ plan: inout LaunchPlan, file: URL, root: URL, test: DiscoveredTest?, config: LaunchConfiguration,
                          purpose: LaunchPurpose, text: String) throws {
-        guard let zig = resolver.toolchain.zig().map(\.path) ?? settings.testExecutablePath(for: .zig) else {
+        // A zig binary chosen in settings wins over detection, as for tests and cargo.
+        guard let zig = settings.testExecutablePath(for: .zig) ?? resolver.toolchain.zig().map(\.path) else {
             throw DebugError.toolNotFound("zig", hint: "Install Zig (e.g. `mise use -g zig@latest`) or choose the zig binary in CrossKit settings.")
         }
         let stem = file.deletingPathExtension().lastPathComponent
