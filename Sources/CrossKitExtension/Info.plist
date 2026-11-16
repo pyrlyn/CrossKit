@@ -110,6 +110,22 @@
 					<key>XCSourceEditorCommandClassName</key>
 					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
 					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.debugFileAtCursor</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Debug File at Cursor</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.debugTestAtCursor</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Debug Test at Cursor</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
 					<string>dev.pyrlyn.CrossKit.Extension.openSettings</string>
 					<key>XCSourceEditorCommandName</key>
 					<string>Open CrossKit Settings</string>

@@ -131,6 +131,61 @@ public final class SettingsStore: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "testTimeoutSeconds") }
     }
 
+    // MARK: Debugging
+
+    /// The user's debugger choice; nil means auto-detect.
+    public func debugger(for language: Language) -> DebuggerKind? {
+        guard let kind = defaults.string(forKey: key(language, "debugger")).flatMap(DebuggerKind.init(rawValue:)),
+              DebuggerKind.choices(for: language).contains(kind) else { return nil }
+        return kind
+    }
+
+    public func setDebugger(_ kind: DebuggerKind?, for language: Language) {
+        if let kind { defaults.set(kind.rawValue, forKey: key(language, "debugger")) } else {
+            defaults.removeObject(forKey: key(language, "debugger"))
+        }
+    }
+
+    /// Custom debugger binary per debugger kind (lldb, lldb-dap, codelldb, java); nil means auto-detect.
+    public func debuggerPath(for kind: DebuggerKind) -> String? {
+        guard let path = defaults.string(forKey: "debuggerPath.\(kind.toolName)"), !path.isEmpty else { return nil }
+        return path
+    }
+
+    public func setDebuggerPath(_ path: String?, for kind: DebuggerKind) {
+        if let path, !path.isEmpty { defaults.set(path, forKey: "debuggerPath.\(kind.toolName)") } else {
+            defaults.removeObject(forKey: "debuggerPath.\(kind.toolName)")
+        }
+    }
+
+    /// JDWP port for Kotlin/JVM debugging; 0 = pick a free port each time.
+    public var jdwpPort: Int {
+        get { defaults.object(forKey: "kotlin.jdwpPort") as? Int ?? 5005 }
+        set { defaults.set(newValue, forKey: "kotlin.jdwpPort") }
+    }
+
+    public func launchConfigurations() -> [LaunchConfiguration] {
+        guard let data = defaults.data(forKey: "launchConfigurations"),
+              let list = try? JSONDecoder().decode([LaunchConfiguration].self, from: data) else { return [] }
+        return list.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    public func launchConfiguration(for language: Language, projectRoot: String) -> LaunchConfiguration? {
+        launchConfigurations().first { $0.language == language && $0.projectRoot == projectRoot }
+    }
+
+    /// Inserts or replaces the configuration for its language + project root.
+    public func saveLaunchConfiguration(_ configuration: LaunchConfiguration) {
+        var list = launchConfigurations().filter { $0.id != configuration.id }
+        list.append(configuration)
+        if let data = try? JSONEncoder().encode(list) { defaults.set(data, forKey: "launchConfigurations") }
+    }
+
+    public func deleteLaunchConfiguration(id: String) {
+        let list = launchConfigurations().filter { $0.id != id }
+        if let data = try? JSONEncoder().encode(list) { defaults.set(data, forKey: "launchConfigurations") }
+    }
+
     // MARK: Lifecycle
 
     /// Servers idle longer than this are shut down. 0 disables idle shutdown.
@@ -164,7 +219,7 @@ public final class SettingsStore: @unchecked Sendable {
     }
 
     public func resetToDefaults(for language: Language) {
-        for name in ["enabled", "serverPath", "arguments", "extensions", "testRunner", "testExecutable", "testArguments"] {
+        for name in ["enabled", "serverPath", "arguments", "extensions", "testRunner", "testExecutable", "testArguments", "debugger"] {
             defaults.removeObject(forKey: key(language, name))
         }
         for feature in Feature.allCases {

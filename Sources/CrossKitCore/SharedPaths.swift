@@ -23,6 +23,11 @@ public enum SharedPaths {
     /// prefixed with their App Group identifier.
     public static let bridgePortName = "\(appGroupIdentifier).bridge"
 
+    /// Debug builds of loose files and per-session lldb/jdb command files.
+    public static var debugDirectory: URL {
+        realHomeDirectory.appendingPathComponent("Library/Caches/CrossKit/Debug", isDirectory: true)
+    }
+
     public static var scratchDirectory: URL {
         realHomeDirectory.appendingPathComponent("Library/Caches/CrossKit/Scratch", isDirectory: true)
     }

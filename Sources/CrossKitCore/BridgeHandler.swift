@@ -12,6 +12,7 @@ public final class BridgeHandler: @unchecked Sendable {
     public var documentResolver: DocumentResolver?
     public var openLocation: LocationOpener?
     public var testService: TestService
+    public var debugService: DebugService
     /// Called with every finished test run (the host shows them in its Test Results window).
     public var onTestRun: (@Sendable (TestRunResult) -> Void)?
 
@@ -19,7 +20,9 @@ public final class BridgeHandler: @unchecked Sendable {
         self.manager = manager
         self.settings = settings
         self.scratchDirectory = scratchDirectory
-        self.testService = TestService(resolver: TestRunnerResolver(settings: settings))
+        let resolver = TestRunnerResolver(settings: settings)
+        self.testService = TestService(resolver: resolver)
+        self.debugService = DebugService(planner: LaunchPlanner(settings: settings, resolver: resolver))
     }
 
     public func handle(_ request: BridgeRequest) async -> BridgeResponse {
@@ -49,6 +52,16 @@ public final class BridgeHandler: @unchecked Sendable {
             guard let file else { throw TestRunnerError.needsSavedFile }
             return try await processTests(request, language: language, file: file.resolvingSymlinksInPath())
         }
+        if request.operation == .debugFile || request.operation == .debugTest {
+            guard let file else { throw DebugError.needsSavedFile }
+            var response = BridgeResponse()
+            response.language = language
+            response.filePath = file.resolvingSymlinksInPath().path
+            response.debugLaunch = try await debugService.start(
+                language: language, file: file.resolvingSymlinksInPath(), text: request.text, cursorLine: request.line,
+                target: request.operation == .debugTest ? .test : .file)
+            return response
+        }
         let documentURL = try (file ?? WorkspaceResolver.scratchFile(for: language, text: request.text, in: scratchDirectory))
             .resolvingSymlinksInPath()
         let root = WorkspaceResolver.root(for: documentURL, language: language).resolvingSymlinksInPath()
@@ -66,7 +79,7 @@ public final class BridgeHandler: @unchecked Sendable {
         let timeout = language.requestTimeout
 
         switch request.operation {
-        case .ping, .discoverTests, .runTests:
+        case .ping, .discoverTests, .runTests, .debugFile, .debugTest:
             break
         case .completion:
             let result = try await warmRequest(client, "textDocument/completion", [

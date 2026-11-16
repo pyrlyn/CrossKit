@@ -8,7 +8,7 @@ CrossKit is an Xcode Source Editor Extension that bridges Xcode to Language Serv
 | Zig | [`zls`](https://github.com/zigtools/zls) | `.zig` |
 | Rust | [`rust-analyzer`](https://rust-analyzer.github.io) | `.rs` |
 
-It provides completion, go to definition, find references, diagnostics, and hover info as **Editor › CrossKit** menu commands, which you can bind to keys. It also runs tests with each language's native runner (`zig test` / `zig build test`, `cargo test` / `cargo nextest`, JUnit 5 through Gradle). Everything is configured in a native settings window, so you never edit a config file. CrossKit makes no network calls; it only launches local server binaries.
+It provides completion, go to definition, find references, diagnostics, and hover info as **Editor › CrossKit** menu commands, which you can bind to keys. It also runs tests with each language's native runner (`zig test` / `zig build test`, `cargo test` / `cargo nextest`, JUnit 5 through Gradle) and starts debug sessions (lldb-dap, lldb, CodeLLDB, or JDWP with jdb). A detailed user guide is in [docs/GUIDE.md](docs/GUIDE.md). Everything is configured in a native settings window, so you never edit a config file. CrossKit makes no network calls; it only launches local server binaries.
 
 ## How it works
 
@@ -38,7 +38,8 @@ Open **CrossKit.app**, the menu bar icon, or **Editor › CrossKit › Open Cros
 
 * **Turn the language on or off.**
 * **Pick the server binary.** CrossKit auto-detects it by default. You can also pick one from the list of detected binaries, choose a file with **Choose…**, or go back to auto-detection.
-* **Turn individual features on or off:** completion, go to definition, find references, diagnostics, hover, and running tests.
+* **Turn individual features on or off:** completion, go to definition, find references, diagnostics, hover, running tests, and debugging.
+* **Configure debugging:** the debugger (auto-detected or forced), its binary, and the Kotlin JDWP port. Per-project launch configurations are listed and editable at the bottom of the window.
 * **Configure test running:** the runner (auto-detected or forced), the test tool binary (auto-detected or chosen), and extra arguments such as `--offline`.
 * **See live server status:** running (with pid and workspace), starting, restarting, stopped, error, or not found. The last error is shown with the tail of the server's stderr, next to **Restart** and **Stop** buttons.
 
@@ -111,6 +112,8 @@ CROSSKIT_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" xcodebuild
 | Show Test Markers | – | Inserts `// [CrossKit] ▶ test …` above every test found in the file. |
 | Run Tests in File | – | Runs every test in the file, shows a pass/fail summary alert, and puts a `✓ passed` / `✗ failed — reason` marker above each test. |
 | Run Test at Cursor | – | Runs only the test that encloses the cursor. |
+| Debug File at Cursor | – | Builds the program and debugs it with a breakpoint on the cursor line. |
+| Debug Test at Cursor | – | Builds and debugs only the test that encloses the cursor. |
 | Clear CrossKit Annotations | – | Removes every `// [CrossKit]` line. |
 | Open CrossKit Settings | – | Brings up the host app. |
 
@@ -125,6 +128,20 @@ Annotation lines are ordinary `//` comments in all three languages and always st
 | Kotlin | `./gradlew test` when the project has a wrapper, otherwise `gradle test`; filtered with `--tests` | `@Test`, `@ParameterizedTest`, `@RepeatedTest`, and `@TestFactory` functions, including `@Nested` inner classes |
 
 Every run also appears in the host app's **Test Results** window: the command, working directory, duration, full output, and a table of tests with status, time, failure output, and a `file:line` button that opens the test in Xcode. Gradle results come from the JUnit XML reports in `build/test-results/test`. If a runner or toolchain is missing, the alert says what to install or which setting to change. Tests run against the saved file, and you get a warning if the buffer has unsaved changes. Runs time out after the configured test timeout (15 minutes by default); the whole process group is then stopped.
+
+## Debugging
+
+**Debug File at Cursor** and **Debug Test at Cursor** build the program (or the single test) and start a debugger with a breakpoint on the cursor line:
+
+| Language | Build | Debugger (auto-detect first) |
+|---|---|---|
+| Zig | `zig build-exe` / `zig build install`; tests via `zig test --test-filter … --test-no-exec` | lldb-dap (managed by CrossKit, Debugger window), lldb in Terminal, or CodeLLDB |
+| Rust | `cargo build` / `cargo test --no-run`, executable taken from Cargo's JSON output | the same |
+| Kotlin | Gradle compiles and reports the runtime classpath; the JVM starts with a JDWP agent (`suspend=y`); tests run via Gradle with the agent in the test JVM | jdb in Terminal (already attached, breakpoint set), or wait for an IDE to attach |
+
+The host app's **Debugger** window shows sessions with Continue / Step Over / Step Into / Step Out / Pause / Stop, the call stack (click to open the line in Xcode), local variables, and program output. Debuggers are auto-detected from Xcode, the Command Line Tools, Homebrew LLVM, and VS Code/Cursor extensions (CodeLLDB), and can be overridden per language. Each project gets an auto-saved **launch configuration** (program or main class, arguments, environment, working directory, test binary arguments), editable in the settings window. Stopping a session, a program exit, or quitting CrossKit leaves no processes behind.
+
+See [docs/GUIDE.md](docs/GUIDE.md) for the detailed user guide.
 
 ## Limitations
 
@@ -159,6 +176,8 @@ scripts/test.sh
   * It drives the extension's layer (`EditorCommandEngine` → `BridgeClient` → `BridgeServer` → `BridgeHandler` → `ServerManager` → server) and checks startup and initialization, diagnostics for a seeded syntax error, completion of a partial identifier, go to definition, and hover.
   * It then shuts the server down cleanly and checks that the process group is gone.
 * **Test-running unit tests:** test discovery for each language, output parsers (`zig test`, `zig build test`, libtest, nextest, JUnit XML, Gradle console), runner selection and command construction against a fake toolchain, missing-tool messages, and editor test markers.
+* **Debugging unit tests:** debugger detection against a fake toolchain, launch-plan generation for every language and target, launch-configuration auto-save and overrides, argument/environment parsing, lldb command generation, Cargo artifact parsing, Kotlin class resolution, and unsaved-annotation line mapping.
+* **Debugging end-to-end tests** (`DebugEndToEndTests`): Zig and Rust debug a program and a single test through lldb-dap, check that the breakpoint is hit at the right line with the right local variables, run to a clean exit, and check that no adapter or debuggee process is left. A Zig test also runs the generated lldb Terminal script in batch mode. Two Kotlin tests (a program, and a JUnit test via Gradle) start the JVM with JDWP, attach jdb exactly like the Terminal script, hit the breakpoint, read the locals, and exit cleanly.
 * **Test-running end-to-end tests** (`TestRunEndToEndTests`), one per language: a temporary project with one passing and one failing test is run through the bridge with **Run Tests in File** and **Run Test at Cursor**, checking statuses, failure output, `file:line` links, and markers. Each test skips if its toolchain is missing. The Kotlin test passes `--offline` when JUnit is already in the Gradle cache.
 
 ## Layout
@@ -167,7 +186,10 @@ scripts/test.sh
 project.yml                      XcodeGen spec (source of truth for CrossKit.xcodeproj)
 Sources/CrossKitCore/            shared framework: framing, JSON-RPC, LSP client, process mgmt,
                                  server manager, settings, auto-detection, bridge, editor engine
-Sources/CrossKitApp/             host app: SwiftUI settings window, menu bar, Xcode document lookup
+Sources/CrossKitCore/Testing/    test discovery, runners, result parsers
+Sources/CrossKitCore/Debugging/  debugger detection, launch planning, DAP client, debug sessions
+Sources/CrossKitApp/             host app: settings, Test Results and Debugger windows, menu bar, Xcode lookup
+docs/GUIDE.md                    detailed user guide
 Sources/CrossKitExtension/       XcodeKit extension (commands → bridge → buffer edits)
 Tests/CrossKitCoreTests/         unit + end-to-end tests
 scripts/                         generate.sh, test.sh, codesign-bundle.sh

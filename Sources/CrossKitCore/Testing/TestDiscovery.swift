@@ -178,4 +178,61 @@ public enum TestDiscovery {
     public static func test(at line: Int, in tests: [DiscoveredTest]) -> DiscoveredTest? {
         tests.filter { $0.line <= line }.max { $0.line < $1.line }
     }
+
+    // MARK: Debugging helpers
+
+    private static let kotlinJvmName = try! NSRegularExpression(pattern: #"@file\s*:\s*JvmName\s*\(\s*"([^"]+)"\s*\)"#)
+    private static let kotlinMain = try! NSRegularExpression(pattern: #"^\s*(?:public\s+)?fun\s+main\s*\("#)
+    private static let zigMain = try! NSRegularExpression(pattern: #"^\s*pub\s+fn\s+main\s*\("#)
+    private static let rustMain = try! NSRegularExpression(pattern: #"^\s*(?:pub\s+)?(?:async\s+)?fn\s+main\s*\("#)
+
+    /// Whether the file declares a program entry point (`main`).
+    public static func hasMain(_ language: Language, text: String) -> Bool {
+        let regex: NSRegularExpression
+        switch language {
+        case .zig: regex = zigMain
+        case .rust: regex = rustMain
+        case .kotlin: regex = kotlinMain
+        }
+        return text.components(separatedBy: "\n").contains { line in
+            let code = stripLineComment(line)
+            return regex.firstMatch(in: code, range: NSRange(code.startIndex..., in: code)) != nil
+        }
+    }
+
+    /// The JVM class that top-level declarations of a Kotlin file compile into (`demo.MainKt`).
+    public static func kotlinFileClass(text: String, fileName: String) -> String {
+        var package = ""
+        var name: String?
+        for line in text.components(separatedBy: "\n") {
+            let range = NSRange(line.startIndex..., in: line)
+            if let m = kotlinPackage.firstMatch(in: line, range: range), let r = Range(m.range(at: 1), in: line) { package = String(line[r]) }
+            if let m = kotlinJvmName.firstMatch(in: line, range: range), let r = Range(m.range(at: 1), in: line) { name = String(line[r]) }
+        }
+        let stem = (fileName as NSString).deletingPathExtension
+        let cls = name ?? (stem.prefix(1).uppercased() + stem.dropFirst() + "Kt")
+        return package.isEmpty ? cls : "\(package).\(cls)"
+    }
+
+    /// The JVM class whose code is at a 0-based line: the innermost enclosing class/object, else the file class.
+    public static func kotlinClass(atLine target: Int, text: String, fileName: String) -> String {
+        let lines = text.components(separatedBy: "\n")
+        var package = ""
+        var classes: [(name: String, depth: Int)] = []
+        var depth = 0
+        for (index, line) in lines.enumerated() {
+            let code = stripLineComment(line)
+            let range = NSRange(code.startIndex..., in: code)
+            if let m = kotlinPackage.firstMatch(in: code, range: range), let r = Range(m.range(at: 1), in: code) { package = String(code[r]) }
+            if let m = kotlinClass.firstMatch(in: code, range: range), let r = Range(m.range(at: 1), in: code), code.contains("{") {
+                classes.append((String(code[r]), depth + 1))
+            }
+            if index == target { break }
+            depth += code.filter { $0 == "{" }.count - code.filter { $0 == "}" }.count
+            while let last = classes.last, depth < last.depth { classes.removeLast() }
+        }
+        guard !classes.isEmpty else { return kotlinFileClass(text: text, fileName: fileName) }
+        let name = classes.map(\.name).joined(separator: "$")
+        return package.isEmpty ? name : "\(package).\(name)"
+    }
 }

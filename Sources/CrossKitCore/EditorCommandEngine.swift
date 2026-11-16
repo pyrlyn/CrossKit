@@ -65,6 +65,8 @@ public enum EditorCommand: String, CaseIterable, Codable, Sendable {
     case showTests
     case runTestsInFile
     case runTestAtCursor
+    case debugFileAtCursor
+    case debugTestAtCursor
     case openSettings
 
     public var displayName: String {
@@ -79,6 +81,8 @@ public enum EditorCommand: String, CaseIterable, Codable, Sendable {
         case .showTests: return "Show Test Markers"
         case .runTestsInFile: return "Run Tests in File"
         case .runTestAtCursor: return "Run Test at Cursor"
+        case .debugFileAtCursor: return "Debug File at Cursor"
+        case .debugTestAtCursor: return "Debug Test at Cursor"
         case .openSettings: return "Open CrossKit Settings"
         }
     }
@@ -117,12 +121,29 @@ public struct EditorCommandEngine: Sendable {
         case .showTests: return try await tests(buffer, operation: .discoverTests, scope: nil, transport: transport)
         case .runTestsInFile: return try await tests(buffer, operation: .runTests, scope: .file, transport: transport)
         case .runTestAtCursor: return try await tests(buffer, operation: .runTests, scope: .cursor, transport: transport)
+        case .debugFileAtCursor: return try await debug(buffer, operation: .debugFile, transport: transport)
+        case .debugTestAtCursor: return try await debug(buffer, operation: .debugTest, transport: transport)
         }
     }
 
     /// Whether a command may run for minutes (the extension uses a longer bridge timeout).
     public static func isLongRunning(_ command: EditorCommand) -> Bool {
-        command == .runTestsInFile || command == .runTestAtCursor
+        [.runTestsInFile, .runTestAtCursor, .debugFileAtCursor, .debugTestAtCursor].contains(command)
+    }
+
+    // MARK: Debugging
+
+    /// Starts a session with a breakpoint on the caret line. The buffer is not modified.
+    func debug(_ buffer: EditorBuffer, operation: BridgeOperation, transport: BridgeTransport) async throws -> EditorOutcome {
+        let caret = buffer.selection.start
+        let request = BridgeRequest(operation: operation, text: buffer.text, line: caret.line, character: caret.column,
+                                    contentUTI: buffer.contentUTI, filePath: buffer.filePath)
+        let response = try await transport.send(request)
+        guard response.ok else { throw EditorCommandError.bridge(response.error ?? "CrossKit request failed") }
+        guard let info = response.debugLaunch else { throw EditorCommandError.nothing("The debugger did not start.") }
+        var message = "▶ " + info.message
+        if let warning = info.warning { message += "\n\n⚠︎ " + warning }
+        return EditorOutcome(message: message)
     }
 
     // MARK: Tests (CodeLens substitute: `// [CrossKit] ▶ …` markers above test functions)
