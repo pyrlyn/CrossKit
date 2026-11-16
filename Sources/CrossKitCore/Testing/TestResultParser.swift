@@ -9,7 +9,12 @@ public enum TestResultParser {
         case .cargoTest: return libtest(output)
         case .cargoNextest: return nextest(output)
         case .gradle, .gradleWrapper:
-            let xml = reportsDirectory.map { junitReports(in: $0, modifiedSince: since) } ?? []
+            var xml = reportsDirectory.map { junitReports(in: $0, modifiedSince: since) } ?? []
+            if xml.isEmpty, let reportsDirectory, gradleTestTaskSkipped(output) {
+                // The test task was UP-TO-DATE (or restored from the build cache): it ran no tests and the
+                // reports of its last execution, with the same filter, are still current.
+                xml = junitReports(in: reportsDirectory, modifiedSince: nil)
+            }
             return xml.isEmpty ? gradleConsole(output) : xml
         }
     }
@@ -198,6 +203,11 @@ public enum TestResultParser {
         parser.delegate = delegate
         parser.parse()
         return delegate.results
+    }
+
+    /// Whether Gradle skipped a test task because its outputs were current (`> Task :lib:test UP-TO-DATE`).
+    static func gradleTestTaskSkipped(_ output: String) -> Bool {
+        output.range(of: #"(?m)^> Task (?:\S*:)?\w*[tT]est (?:UP-TO-DATE|FROM-CACHE)\s*$"#, options: .regularExpression) != nil
     }
 
     /// Fallback when no XML exists: Gradle console `Class > method() FAILED|PASSED|SKIPPED`.
