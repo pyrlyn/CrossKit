@@ -164,6 +164,92 @@ public final class SettingsStore: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "kotlin.jdwpPort") }
     }
 
+    // MARK: Kotlin targets
+
+    /// Which Kotlin target to build, run, test and debug (per launch configuration it can be overridden).
+    public var kotlinTarget: KotlinTargetChoice {
+        get { KotlinTargetChoice(defaults.string(forKey: "kotlin.target")) }
+        set {
+            if newValue == .auto { defaults.removeObject(forKey: "kotlin.target") } else { defaults.set(newValue.rawValue, forKey: "kotlin.target") }
+        }
+    }
+
+    /// Debugger for Kotlin/Native binaries; nil means auto-detect (lldb-dap, else lldb in Terminal).
+    public var kotlinNativeDebugger: DebuggerKind? {
+        get {
+            guard let kind = defaults.string(forKey: "kotlin.nativeDebugger").flatMap(DebuggerKind.init(rawValue:)),
+                  DebuggerKind.nativeChoices.contains(kind) else { return nil }
+            return kind
+        }
+        set {
+            if let newValue { defaults.set(newValue.rawValue, forKey: "kotlin.nativeDebugger") } else {
+                defaults.removeObject(forKey: "kotlin.nativeDebugger")
+            }
+        }
+    }
+
+    /// Keep the Gradle daemon between test runs, builds, runs and previews (faster). Debug sessions never use it.
+    public var gradleDaemon: Bool {
+        get { defaults.object(forKey: "kotlin.gradleDaemon") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "kotlin.gradleDaemon") }
+    }
+
+    /// Extra Gradle arguments that follow the daemon setting.
+    public var gradleDaemonArguments: [String] {
+        gradleDaemon ? [] : ["--no-daemon", "-Pkotlin.compiler.execution.strategy=in-process"]
+    }
+
+    // MARK: Running programs
+
+    /// How long Run File waits for the program before reporting it as still running.
+    public var runWaitSeconds: TimeInterval {
+        get { defaults.object(forKey: "run.waitSeconds") as? Double ?? 10 }
+        set { defaults.set(newValue, forKey: "run.waitSeconds") }
+    }
+
+    // MARK: Compose previews
+
+    /// Pixels per dp in rendered previews (2 = Retina).
+    public var previewDensity: Double {
+        get { defaults.object(forKey: "preview.density") as? Double ?? 2 }
+        set { defaults.set(newValue, forKey: "preview.density") }
+    }
+
+    /// Re-render the Preview window's file when it is saved.
+    public var previewAutoRefresh: Bool {
+        get { defaults.object(forKey: "preview.autoRefresh") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "preview.autoRefresh") }
+    }
+
+    // MARK: Inline annotations (CodeLens, inlay hints, ErrorLens)
+
+    public var inlineOptions: InlineAnnotationOptions {
+        get {
+            var o = InlineAnnotationOptions()
+            let d = defaults
+            if let v = d.object(forKey: "inline.lensReferences") as? Bool { o.lensReferences = v }
+            if let v = d.object(forKey: "inline.lensActions") as? Bool { o.lensActions = v }
+            if let v = d.object(forKey: "inline.hintTypes") as? Bool { o.hintTypes = v }
+            if let v = d.object(forKey: "inline.hintParameters") as? Bool { o.hintParameters = v }
+            if let v = d.object(forKey: "inline.hintOther") as? Bool { o.hintOther = v }
+            if let v = d.string(forKey: "inline.hintPlacement").flatMap(InlineAnnotationOptions.Placement.init(rawValue:)) { o.hintPlacement = v }
+            if let v = d.object(forKey: "inline.errorLensSeverity") as? Int { o.errorLensMinimumSeverity = min(max(v, 1), 4) }
+            if let v = d.object(forKey: "inline.errorLensSource") as? Bool { o.errorLensShowSource = v }
+            return o
+        }
+        set {
+            let d = defaults
+            d.set(newValue.lensReferences, forKey: "inline.lensReferences")
+            d.set(newValue.lensActions, forKey: "inline.lensActions")
+            d.set(newValue.hintTypes, forKey: "inline.hintTypes")
+            d.set(newValue.hintParameters, forKey: "inline.hintParameters")
+            d.set(newValue.hintOther, forKey: "inline.hintOther")
+            d.set(newValue.hintPlacement.rawValue, forKey: "inline.hintPlacement")
+            d.set(newValue.errorLensMinimumSeverity, forKey: "inline.errorLensSeverity")
+            d.set(newValue.errorLensShowSource, forKey: "inline.errorLensSource")
+        }
+    }
+
     public func launchConfigurations() -> [LaunchConfiguration] {
         guard let data = defaults.data(forKey: "launchConfigurations"),
               let list = try? JSONDecoder().decode([LaunchConfiguration].self, from: data) else { return [] }

@@ -39,6 +39,8 @@ struct MenuBarContent: View {
         }
         Divider()
         Button("Debugger…") { DebuggerWindow.show(model: model) }
+        Button("Run…") { RunWindow.show(model: model) }
+        Button("Preview…") { PreviewWindow.show(model: model) }
         Button("Test Results…") {
             openWindow(id: "tests")
             NSApp.activate(ignoringOtherApps: true)

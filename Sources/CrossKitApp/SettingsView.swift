@@ -42,6 +42,10 @@ struct SettingsView: View {
                 LanguageSection(language: language)
             }
 
+            InlineAnnotationsSection()
+
+            RunAndPreviewSection()
+
             LaunchConfigurationsSection()
         }
         .formStyle(.grouped)
@@ -95,7 +99,7 @@ struct LanguageSection: View {
 
                 LabeledContent("Features") {
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Feature.allCases) { feature in
+                        ForEach(Feature.allCases.filter { $0.applies(to: language) }) { feature in
                             Toggle(feature.displayName, isOn: model.featureBinding(feature, language))
                                 .toggleStyle(.checkbox)
                         }
@@ -103,6 +107,10 @@ struct LanguageSection: View {
                 }
 
                 TestSettings(language: language)
+
+                if language == .kotlin {
+                    KotlinTargetSettings()
+                }
 
                 DebugSettings(language: language)
 
@@ -246,13 +254,121 @@ struct DebugSettings: View {
     }
 }
 
+struct KotlinTargetSettings: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        LabeledContent("Kotlin target") {
+            VStack(alignment: .trailing, spacing: 4) {
+                Picker("", selection: model.kotlinTargetBinding) {
+                    Text(KotlinTargetChoice.auto.displayName).tag("auto")
+                    Text(KotlinTargetChoice.jvm.displayName).tag("jvm")
+                    Text("Kotlin/Native (\(KotlinProject.hostNativePreset))").tag("native")
+                    Text("Other target…").tag("custom")
+                }
+                .labelsHidden()
+                .fixedSize()
+                if model.kotlinTargetBinding.wrappedValue == "custom" {
+                    TextField("Gradle target name, e.g. desktop or linuxX64", text: model.kotlinCustomTargetBinding)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 260)
+                }
+            }
+        }
+        .help("Target for Build Project, Run File, tests and debugging in Kotlin Multiplatform modules. Files in a target's own source set (jvmMain, nativeMain, …) always use that target. A launch configuration can override it per project.")
+        LabeledContent("Native debugger") {
+            Picker("", selection: model.kotlinNativeDebuggerBinding) {
+                Text("Auto-detect (\(model.debuggers.autoKind(for: .zig).displayName))").tag("auto")
+                ForEach(DebuggerKind.nativeChoices) { kind in
+                    Text(kind.displayName).tag(kind.rawValue)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+        .help("Debugger for Kotlin/Native binaries (linkDebugExecutable…). JVM targets use the Debugger setting below.")
+        Toggle("Keep the Gradle daemon running (faster builds, runs, tests and previews)", isOn: model.gradleDaemonBinding)
+            .help("When off, Gradle runs with --no-daemon and the Kotlin compiler in-process. Debug sessions never use the daemon.")
+    }
+}
+
+struct InlineAnnotationsSection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Section {
+            LabeledContent("Code Lens") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Reference counts", isOn: model.inlineBinding(\.lensReferences)).toggleStyle(.checkbox)
+                    Toggle("Run, Debug and Preview actions", isOn: model.inlineBinding(\.lensActions)).toggleStyle(.checkbox)
+                }
+            }
+            LabeledContent("Inlay hints") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Types", isOn: model.inlineBinding(\.hintTypes)).toggleStyle(.checkbox)
+                    Toggle("Parameter names", isOn: model.inlineBinding(\.hintParameters)).toggleStyle(.checkbox)
+                    Toggle("Other hints (chaining, closing braces, …)", isOn: model.inlineBinding(\.hintOther)).toggleStyle(.checkbox)
+                    Picker("Placement", selection: model.inlineBinding(\.hintPlacement)) {
+                        ForEach(InlineAnnotationOptions.Placement.allCases, id: \.self) { placement in
+                            Text(placement.displayName).tag(placement)
+                        }
+                    }
+                    .fixedSize()
+                }
+            }
+            LabeledContent("ErrorLens") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker("Show", selection: model.inlineBinding(\.errorLensMinimumSeverity)) {
+                        Text("Errors").tag(1)
+                        Text("Errors and warnings").tag(2)
+                        Text("Errors, warnings and information").tag(3)
+                        Text("Everything, including hints").tag(4)
+                    }
+                    .fixedSize()
+                    Toggle("Show the diagnostic source (e.g. rustc, zls)", isOn: model.inlineBinding(\.errorLensShowSource)).toggleStyle(.checkbox)
+                }
+            }
+            Text("Xcode extensions cannot draw inside the editor, so these are inserted as `// [CrossKit]` comments: lenses above declarations, hints above the line or at its end, ErrorLens at the end of the line. Turn each on or off per language under Features; Clear Inline Annotations removes them.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text("Inline Annotations")
+        }
+    }
+}
+
+struct RunAndPreviewSection: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Section {
+            HStack {
+                Text("Run File waits for the program")
+                Stepper(value: model.runWaitBinding, in: 0...120, step: 5) {
+                    Text("\(Int(model.runWaitBinding.wrappedValue)) s").monospacedDigit()
+                }
+            }
+            .help("Programs that finish within this time show their output in the alert; longer ones keep running in CrossKit › Run.")
+            Picker("Compose preview scale", selection: model.previewDensityBinding) {
+                Text("1× (1 px per dp)").tag(1.0)
+                Text("2× (Retina)").tag(2.0)
+                Text("3×").tag(3.0)
+            }
+            .fixedSize()
+            Toggle("Re-render the Preview window when its file is saved", isOn: model.previewAutoRefreshBinding)
+        } header: {
+            Text("Build, Run & Preview")
+        }
+    }
+}
+
 struct LaunchConfigurationsSection: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
         Section {
             if model.launchConfigurations.isEmpty {
-                Text("A configuration is created and saved automatically the first time you debug a project (Editor › CrossKit › Debug File at Cursor).")
+                Text("A configuration is created and saved automatically the first time you build, run or debug a project (Editor › CrossKit › Run File, Debug File at Cursor).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -282,8 +398,17 @@ struct LaunchConfigurationEditor: View {
     var body: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 6) {
-                LabeledContent(config.language == .kotlin ? "Main class" : "Program") {
-                    TextField(config.language == .kotlin ? "auto (e.g. demo.MainKt)" : "auto (built by CrossKit)", text: $config.program)
+                if config.language == .kotlin {
+                    LabeledContent("Kotlin target") {
+                        TextField("settings (\(model.settings.kotlinTarget.displayName))", text: Binding(
+                            get: { config.kotlinTarget ?? "" },
+                            set: { config.kotlinTarget = $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }))
+                            .textFieldStyle(.roundedBorder)
+                            .help("auto, jvm, native, or a Gradle target name such as desktop or macosArm64. Empty follows CrossKit settings.")
+                    }
+                }
+                LabeledContent(config.language == .kotlin ? "Main class / executable" : "Program") {
+                    TextField(config.language == .kotlin ? "auto (JVM: e.g. demo.MainKt; Native: path to a .kexe)" : "auto (built by CrossKit)", text: $config.program)
                         .textFieldStyle(.roundedBorder)
                 }
                 LabeledContent("Arguments") {

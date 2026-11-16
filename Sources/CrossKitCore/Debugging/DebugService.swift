@@ -87,8 +87,13 @@ public final class DebugService: @unchecked Sendable {
         case .gradleTest(let command):
             program = command.first ?? "gradle"
             jvmCommand = command
+        case .nativeExecutable(let directory):
+            guard let exe = KotlinProject.nativeExecutable(in: URL(fileURLWithPath: directory)) else {
+                throw DebugError.noProgram("The Kotlin/Native link task produced no .kexe in \(directory).")
+            }
+            program = exe.path
         }
-        if plan.language != .kotlin, !FileManager.default.isExecutableFile(atPath: program) {
+        if !plan.debugger.isJVM, !FileManager.default.isExecutableFile(atPath: program) {
             throw DebugError.noProgram("Program not found: \(program)")
         }
 
@@ -203,7 +208,8 @@ public final class DebugService: @unchecked Sendable {
 
     /// lldb commands: create the target, set the breakpoint, launch with args/env/cwd.
     public static func lldbCommands(plan: LaunchPlan, program: String) -> String {
-        var lines = ["target create \(lldbQuote(program))"]
+        var lines = plan.lldbInitCommands
+        lines.append("target create \(lldbQuote(program))")
         if !plan.environment.isEmpty {
             lines.append("settings set target.env-vars " + plan.environment.sorted { $0.key < $1.key }.map { lldbQuote("\($0.key)=\($0.value)") }.joined(separator: " "))
         }
@@ -256,9 +262,10 @@ public final class DebugService: @unchecked Sendable {
         guard let disk = try? String(contentsOf: file, encoding: .utf8) else { return (text, line) }
         let trim = { (s: String) in s.trimmingCharacters(in: .whitespacesAndNewlines) }
         guard trim(disk) != trim(text) else { return (text, line) }
-        let lines = text.components(separatedBy: "\n")
+        // Trailing `  // [CrossKit] …` segments (inlay hints, ErrorLens) do not move lines; drop them first.
+        let lines = text.components(separatedBy: "\n").map { InlineAnnotations.stripTrailing($0) }
         let annotations = lines.indices.filter { EditorCommandEngine.isAnnotation(lines[$0]) }
-        guard !annotations.isEmpty else { return (text, line) }
+        guard !annotations.isEmpty || lines.joined(separator: "\n") != text else { return (text, line) }
         let cleaned = lines.enumerated().filter { !annotations.contains($0.offset) }.map(\.element).joined(separator: "\n")
         guard trim(cleaned) == trim(disk) else { return (text, line) }
         return (cleaned, line - annotations.filter { $0 < line }.count)
@@ -275,7 +282,7 @@ public final class DebugService: @unchecked Sendable {
         return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    static func lldbQuote(_ s: String) -> String {
+    public static func lldbQuote(_ s: String) -> String {
         "\"" + s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 

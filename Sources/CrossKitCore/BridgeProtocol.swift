@@ -2,6 +2,7 @@ import Foundation
 
 public enum BridgeOperation: String, Codable, Sendable {
     case ping, completion, definition, references, hover, diagnostics, discoverTests, runTests, debugFile, debugTest
+    case build, run, preview, inlineAnnotations
 
     public var feature: Feature? {
         switch self {
@@ -13,6 +14,10 @@ public enum BridgeOperation: String, Codable, Sendable {
         case .diagnostics: return .diagnostics
         case .discoverTests, .runTests: return .tests
         case .debugFile, .debugTest: return .debug
+        case .build, .run: return .run
+        case .preview: return .preview
+        // Checked per requested kind (CodeLens, inlay hints, ErrorLens).
+        case .inlineAnnotations: return nil
         }
     }
 }
@@ -94,10 +99,13 @@ public struct BridgeRequest: Codable, Equatable, Sendable {
     public var contentUTI: String
     public var filePath: String?
     public var testScope: TestScope?
+    /// inlineAnnotations: which kinds to compute; nil = every kind enabled in settings.
+    public var inlineKinds: [InlineKind]?
 
     public init(operation: BridgeOperation, text: String = "", line: Int = 0, character: Int = 0,
-                contentUTI: String = "", filePath: String? = nil, testScope: TestScope? = nil) {
+                contentUTI: String = "", filePath: String? = nil, testScope: TestScope? = nil, inlineKinds: [InlineKind]? = nil) {
         self.testScope = testScope
+        self.inlineKinds = inlineKinds
         self.operation = operation
         self.text = text
         self.line = line
@@ -121,6 +129,13 @@ public struct BridgeResponse: Codable, Equatable, Sendable {
     public var tests: [DiscoveredTest]?
     public var testRun: TestRunResult?
     public var debugLaunch: DebugLaunchInfo?
+    public var programRun: ProgramRun?
+    public var preview: PreviewResult?
+    public var codeLenses: [BridgeCodeLens]?
+    public var inlayHints: [BridgeInlayHint]?
+    /// Kinds the host computed for an inlineAnnotations request.
+    public var inlineKinds: [InlineKind]?
+    public var inlineOptions: InlineAnnotationOptions?
 
     public init(ok: Bool = true, error: String? = nil) {
         self.ok = ok
@@ -200,6 +215,48 @@ public enum LSPConvert {
             return BridgeDiagnostic(range: r, severity: item["severity"]?.intValue ?? 1, message: message,
                                     source: item["source"]?.stringValue)
         }
+    }
+
+    /// InlayHint[]: label is a string or InlayHintLabelPart[].
+    public static func inlayHints(_ result: JSONValue) -> [BridgeInlayHint] {
+        (result.arrayValue ?? []).compactMap { item in
+            guard let line = item["position"]?["line"]?.intValue, let character = item["position"]?["character"]?.intValue else { return nil }
+            let label: String
+            if let text = item["label"]?.stringValue { label = text } else {
+                label = (item["label"]?.arrayValue ?? []).compactMap { $0["value"]?.stringValue }.joined()
+            }
+            guard !label.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            let kind = BridgeInlayHint.Kind(rawValue: item["kind"]?.intValue ?? 0) ?? .other
+            return BridgeInlayHint(line: line, character: character, label: label, kind: kind,
+                                   paddingLeft: item["paddingLeft"]?.boolValue ?? false, paddingRight: item["paddingRight"]?.boolValue ?? false)
+        }
+    }
+
+    /// A declaration from textDocument/documentSymbol.
+    public struct Symbol: Equatable, Sendable {
+        public var name: String
+        public var kind: Int
+        /// Where the name is (references are asked for here).
+        public var selection: BridgeRange
+        public var range: BridgeRange
+    }
+
+    /// DocumentSymbol[] (nested) or SymbolInformation[] (flat), flattened.
+    public static func symbols(_ result: JSONValue) -> [Symbol] {
+        var out: [Symbol] = []
+        func walk(_ items: [JSONValue]) {
+            for item in items {
+                guard let name = item["name"]?.stringValue, let kind = item["kind"]?.intValue else { continue }
+                if let r = range(item["range"]) {
+                    out.append(Symbol(name: name, kind: kind, selection: range(item["selectionRange"]) ?? r, range: r))
+                } else if let r = range(item["location"]?["range"]) {
+                    out.append(Symbol(name: name, kind: kind, selection: r, range: r))
+                }
+                if let children = item["children"]?.arrayValue { walk(children) }
+            }
+        }
+        walk(result.arrayValue ?? [])
+        return out
     }
 
     /// Turns `foo(${1:x}, $2)$0` into `foo(x, )`.

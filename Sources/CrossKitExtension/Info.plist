@@ -126,6 +126,70 @@
 					<key>XCSourceEditorCommandClassName</key>
 					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
 					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.buildProject</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Build Project</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.runFile</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Run File</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.showPreview</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Show Compose Preview at Cursor</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.showCodeLenses</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Show Code Lenses</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.showInlayHints</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Show Inlay Hints</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.showErrorLens</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Show ErrorLens Diagnostics</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.refreshInlineAnnotations</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Refresh Inline Annotations</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
+					<string>dev.pyrlyn.CrossKit.Extension.clearInlineAnnotations</string>
+					<key>XCSourceEditorCommandName</key>
+					<string>Clear Inline Annotations</string>
+				</dict>
+				<dict>
+					<key>XCSourceEditorCommandClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SourceEditorCommand</string>
+					<key>XCSourceEditorCommandIdentifier</key>
 					<string>dev.pyrlyn.CrossKit.Extension.openSettings</string>
 					<key>XCSourceEditorCommandName</key>
 					<string>Open CrossKit Settings</string>

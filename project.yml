@@ -131,6 +131,30 @@ targets:
                 XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.debugTestAtCursor
                 XCSourceEditorCommandName: Debug Test at Cursor
               - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.buildProject
+                XCSourceEditorCommandName: Build Project
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.runFile
+                XCSourceEditorCommandName: Run File
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.showPreview
+                XCSourceEditorCommandName: Show Compose Preview at Cursor
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.showCodeLenses
+                XCSourceEditorCommandName: Show Code Lenses
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.showInlayHints
+                XCSourceEditorCommandName: Show Inlay Hints
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.showErrorLens
+                XCSourceEditorCommandName: Show ErrorLens Diagnostics
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.refreshInlineAnnotations
+                XCSourceEditorCommandName: Refresh Inline Annotations
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
+                XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.clearInlineAnnotations
+                XCSourceEditorCommandName: Clear Inline Annotations
+              - XCSourceEditorCommandClassName: $(PRODUCT_MODULE_NAME).SourceEditorCommand
                 XCSourceEditorCommandIdentifier: dev.pyrlyn.CrossKit.Extension.openSettings
                 XCSourceEditorCommandName: Open CrossKit Settings
 

@@ -13,8 +13,12 @@ public final class BridgeHandler: @unchecked Sendable {
     public var openLocation: LocationOpener?
     public var testService: TestService
     public var debugService: DebugService
+    public var runService: RunService
+    public var previewService: PreviewService
     /// Called with every finished test run (the host shows them in its Test Results window).
     public var onTestRun: (@Sendable (TestRunResult) -> Void)?
+    /// Called with every preview render (the host shows its Preview window).
+    public var onPreview: (@Sendable (PreviewResult) -> Void)?
 
     public init(manager: ServerManager, settings: SettingsStore, scratchDirectory: URL = SharedPaths.scratchDirectory) {
         self.manager = manager
@@ -22,7 +26,10 @@ public final class BridgeHandler: @unchecked Sendable {
         self.scratchDirectory = scratchDirectory
         let resolver = TestRunnerResolver(settings: settings)
         self.testService = TestService(resolver: resolver)
-        self.debugService = DebugService(planner: LaunchPlanner(settings: settings, resolver: resolver))
+        let planner = LaunchPlanner(settings: settings, resolver: resolver)
+        self.debugService = DebugService(planner: planner)
+        self.runService = RunService(planner: planner)
+        self.previewService = PreviewService(planner: planner)
     }
 
     public func handle(_ request: BridgeRequest) async -> BridgeResponse {
@@ -62,6 +69,42 @@ public final class BridgeHandler: @unchecked Sendable {
                 target: request.operation == .debugTest ? .test : .file)
             return response
         }
+        if request.operation == .build || request.operation == .run {
+            guard let file else { throw DebugError.needsSavedFile }
+            var response = BridgeResponse()
+            response.language = language
+            response.filePath = file.resolvingSymlinksInPath().path
+            let resolved = file.resolvingSymlinksInPath()
+            response.programRun = request.operation == .build
+                ? try await runService.build(language: language, file: resolved, text: request.text)
+                : try await runService.runFile(language: language, file: resolved, text: request.text)
+            return response
+        }
+        if request.operation == .preview {
+            guard language == .kotlin else { throw BridgeError.unsupported("Compose previews are available for Kotlin files only.") }
+            guard let file else { throw DebugError.needsSavedFile }
+            var response = BridgeResponse()
+            response.language = language
+            response.filePath = file.resolvingSymlinksInPath().path
+            let result = try await previewService.render(file: file.resolvingSymlinksInPath(), text: request.text, cursorLine: request.line)
+            onPreview?(result)
+            response.preview = result
+            return response
+        }
+        var inlineKinds: [InlineKind] = []
+        if request.operation == .inlineAnnotations {
+            if let requested = request.inlineKinds {
+                for kind in requested where !settings.isFeatureEnabled(kind.feature, for: language) {
+                    throw BridgeError.featureDisabled(kind.feature, language)
+                }
+                inlineKinds = requested
+            } else {
+                inlineKinds = InlineKind.allCases.filter { settings.isFeatureEnabled($0.feature, for: language) }
+                guard !inlineKinds.isEmpty else {
+                    throw BridgeError.unsupported("Code Lens, Inlay Hints and ErrorLens are all turned off for \(language.displayName) in CrossKit settings.")
+                }
+            }
+        }
         let documentURL = try (file ?? WorkspaceResolver.scratchFile(for: language, text: request.text, in: scratchDirectory))
             .resolvingSymlinksInPath()
         let root = WorkspaceResolver.root(for: documentURL, language: language).resolvingSymlinksInPath()
@@ -79,8 +122,41 @@ public final class BridgeHandler: @unchecked Sendable {
         let timeout = language.requestTimeout
 
         switch request.operation {
-        case .ping, .discoverTests, .runTests, .debugFile, .debugTest:
+        case .ping, .discoverTests, .runTests, .debugFile, .debugTest, .build, .run, .preview:
             break
+        case .inlineAnnotations:
+            let options = settings.inlineOptions
+            response.inlineKinds = inlineKinds
+            response.inlineOptions = options
+            if inlineKinds.contains(.codeLens) {
+                response.codeLenses = try await codeLenses(client: client, textDocument: textDocument, language: language,
+                                                           file: documentURL, text: request.text, options: options, timeout: timeout)
+            }
+            if inlineKinds.contains(.inlayHints) {
+                guard client.capabilities["inlayHintProvider"] != nil else {
+                    throw BridgeError.unsupported("\(language.serverBinaryName) does not provide inlay hints.")
+                }
+                // The whole document: the end must be a real position (rust-analyzer rejects lines past the end).
+                let lines = request.text.components(separatedBy: "\n")
+                let end: JSONValue = ["line": .int(max(lines.count - 1, 0)), "character": .int(lines.last?.utf16.count ?? 0)]
+                let result = try await warmRequest(client, "textDocument/inlayHint", [
+                    "textDocument": textDocument,
+                    "range": ["start": ["line": 0, "character": 0], "end": end],
+                ], timeout: timeout)
+                response.inlayHints = LSPConvert.inlayHints(result).filter { hint in
+                    switch hint.kind {
+                    case .type: return options.hintTypes
+                    case .parameter: return options.hintParameters
+                    case .other: return options.hintOther
+                    }
+                }
+            }
+            if inlineKinds.contains(.errorLens) {
+                let (items, received) = await fetchDiagnostics(client: client, uri: uri, textDocument: textDocument, before: before,
+                                                               language: language, timeout: timeout)
+                response.diagnostics = items.filter { $0.severity <= options.errorLensMinimumSeverity }
+                response.diagnosticsReceived = received
+            }
         case .completion:
             let result = try await warmRequest(client, "textDocument/completion", [
                 "textDocument": textDocument, "position": position, "context": ["triggerKind": 1],
@@ -104,21 +180,84 @@ public final class BridgeHandler: @unchecked Sendable {
             ], timeout: timeout)
             response.hover = LSPConvert.hoverText(result)
         case .diagnostics:
-            if client.capabilities["diagnosticProvider"] != nil,
-               let result = try? await client.request("textDocument/diagnostic", ["textDocument": textDocument], timeout: timeout),
-               let items = result["items"]?.arrayValue {
-                response.diagnostics = LSPConvert.diagnostics(items)
-                response.diagnosticsReceived = true
-            } else if let items = await client.waitForDiagnostics(uri: uri, afterSequence: before, timeout: language.diagnosticsTimeout) {
-                response.diagnostics = LSPConvert.diagnostics(items)
-                response.diagnosticsReceived = true
-            } else {
-                response.diagnostics = LSPConvert.diagnostics(client.diagnosticsState(uri: uri).items)
-                response.diagnosticsReceived = false
-            }
+            let (items, received) = await fetchDiagnostics(client: client, uri: uri, textDocument: textDocument, before: before,
+                                                           language: language, timeout: timeout)
+            response.diagnostics = items
+            response.diagnosticsReceived = received
         }
         await manager.touch(language, root: root)
         return response
+    }
+
+    private func fetchDiagnostics(client: LSPClient, uri: String, textDocument: JSONValue, before: Int, language: Language,
+                                  timeout: TimeInterval) async -> ([BridgeDiagnostic], Bool) {
+        if client.capabilities["diagnosticProvider"] != nil,
+           let result = try? await client.request("textDocument/diagnostic", ["textDocument": textDocument], timeout: timeout),
+           let items = result["items"]?.arrayValue {
+            return (LSPConvert.diagnostics(items), true)
+        }
+        if let items = await client.waitForDiagnostics(uri: uri, afterSequence: before, timeout: language.diagnosticsTimeout) {
+            return (LSPConvert.diagnostics(items), true)
+        }
+        return (LSPConvert.diagnostics(client.diagnosticsState(uri: uri).items), false)
+    }
+
+    // MARK: CodeLens
+
+    /// Declarations that get a reference-count lens: class, method, enum, interface, function, object, struct.
+    static let lensSymbolKinds: Set<Int> = [5, 6, 10, 11, 12, 19, 23]
+
+    private func codeLenses(client: LSPClient, textDocument: JSONValue, language: Language, file: URL, text: String,
+                            options: InlineAnnotationOptions, timeout: TimeInterval) async throws -> [BridgeCodeLens] {
+        var lenses: [Int: BridgeCodeLens] = [:]
+        if options.lensReferences, client.capabilities["documentSymbolProvider"] != nil {
+            let result = try await warmRequest(client, "textDocument/documentSymbol", ["textDocument": textDocument], timeout: timeout)
+            let symbols = LSPConvert.symbols(result).filter { Self.lensSymbolKinds.contains($0.kind) }
+            let canCount = client.capabilities["referencesProvider"] != nil
+            let deadline = Date().addingTimeInterval(language == .kotlin ? 90 : 45)
+            for symbol in symbols.prefix(150) where lenses[symbol.selection.startLine] == nil {
+                var count: Int?
+                if canCount, Date() < deadline {
+                    let position: JSONValue = ["line": .int(symbol.selection.startLine), "character": .int(symbol.selection.startCharacter)]
+                    if let refs = try? await client.request("textDocument/references", [
+                        "textDocument": textDocument, "position": position, "context": ["includeDeclaration": false],
+                    ], timeout: 20) {
+                        count = LSPConvert.locations(refs).filter {
+                            !($0.path == file.path && $0.range.startLine == symbol.selection.startLine)
+                        }.count
+                    }
+                }
+                lenses[symbol.selection.startLine] = BridgeCodeLens(line: symbol.selection.startLine, symbol: symbol.name, references: count)
+            }
+        }
+        if options.lensActions {
+            func add(_ line: Int, _ name: String, _ actions: [String]) {
+                var lens = lenses[line] ?? BridgeCodeLens(line: line, symbol: name)
+                lens.actions += actions.filter { !lens.actions.contains($0) }
+                lenses[line] = lens
+            }
+            let root = testService.resolver.projectRoot(for: file, language: language)
+            if settings.isFeatureEnabled(.tests, for: language) || settings.isFeatureEnabled(.debug, for: language) {
+                for test in TestDiscovery.discover(language, text: text, filePath: file.path, root: root) {
+                    var actions: [String] = []
+                    if settings.isFeatureEnabled(.tests, for: language) { actions.append("▶ Run Test") }
+                    if settings.isFeatureEnabled(.debug, for: language) { actions.append("⚙ Debug Test") }
+                    add(test.line, test.name, actions)
+                }
+            }
+            if let main = TestDiscovery.mainLine(language, text: text) {
+                var actions: [String] = []
+                if settings.isFeatureEnabled(.run, for: language) { actions.append("▶ Run") }
+                if settings.isFeatureEnabled(.debug, for: language) { actions.append("⚙ Debug") }
+                if !actions.isEmpty { add(main, "main", actions) }
+            }
+            if language == .kotlin, settings.isFeatureEnabled(.preview, for: language) {
+                for preview in PreviewDiscovery.discover(text: text, fileName: file.lastPathComponent) where preview.index == 0 {
+                    add(preview.line, preview.function, ["◉ Preview"])
+                }
+            }
+        }
+        return lenses.values.filter { $0.references != nil || !$0.actions.isEmpty }.sorted { $0.line < $1.line }
     }
 
     // MARK: Tests
@@ -178,15 +317,31 @@ public final class BridgeHandler: @unchecked Sendable {
 
     /// Right after start, servers often answer `null`/`[]` while still indexing; retry briefly.
     private func warmRequest(_ client: LSPClient, _ method: String, _ params: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
-        var result = try await client.request(method, params, timeout: timeout)
+        var result = try await retryingRequest(client, method, params, timeout: timeout)
         var attempts = 0
         while Self.isEmpty(result), Date().timeIntervalSince(client.startedAt) < 60, attempts < 15 {
             attempts += 1
             try await Task.sleep(nanoseconds: 1_000_000_000)
-            result = try await client.request(method, params, timeout: timeout)
+            result = try await retryingRequest(client, method, params, timeout: timeout)
         }
         return result
     }
+
+    /// Retries requests the server dropped because the workspace changed underneath them
+    /// (ContentModified -32801, ServerCancelled -32802), which rust-analyzer does while indexing.
+    private func retryingRequest(_ client: LSPClient, _ method: String, _ params: JSONValue, timeout: TimeInterval) async throws -> JSONValue {
+        var attempt = 0
+        while true {
+            do {
+                return try await client.request(method, params, timeout: timeout)
+            } catch LSPError.server(let error) where Self.transientCodes.contains(error.code) && attempt < 10 {
+                attempt += 1
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+        }
+    }
+
+    static let transientCodes: Set<Int> = [-32801, -32802]
 
     static func isEmpty(_ value: JSONValue) -> Bool {
         switch value {

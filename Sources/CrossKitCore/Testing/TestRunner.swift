@@ -163,14 +163,22 @@ public struct TestRunnerResolver: Sendable {
             }
         case .gradle, .gradleWrapper:
             let module = nearest(["build.gradle.kts", "build.gradle"], from: file.deletingLastPathComponent()) ?? root
-            args = [gradleTask(module: module, root: root), "--console=plain"]
+            // Kotlin Multiplatform: the test task of the chosen target (jvmTest, macosArm64Test, …).
+            var task = "test"
+            var reportsDir = module.appendingPathComponent("build/test-results/test")
+            if let project = KotlinProject.load(file: file, root: root), project.isMultiplatform {
+                let target = try project.target(for: file, choice: kotlinTargetChoice(projectRoot: root))
+                task = project.testTask(for: target)
+                reportsDir = project.testReportsDirectory(for: target)
+            }
+            args = [gradleTask(module: module, root: root, task: task), "--console=plain"] + settings.gradleDaemonArguments
             if scope == .cursor, let test = cursorTest {
                 args += ["--tests", test.filter]
             } else {
                 let classes = Array(Set(tests.map { $0.className ?? $0.filter })).sorted()
                 for name in classes { args += ["--tests", name] }
             }
-            reports = module.appendingPathComponent("build/test-results/test").path
+            reports = reportsDir.path
         }
         args += settings.testArguments(for: language)
         return TestCommand(kind: kind, executable: exe.path, arguments: args, workingDirectory: root.path,
@@ -187,12 +195,20 @@ public struct TestRunnerResolver: Sendable {
         return cargoArgs[i + 1]
     }
 
-    private func gradleTask(module: URL, root: URL) -> String {
+    private func gradleTask(module: URL, root: URL, task: String) -> String {
         let rootPath = root.standardizedFileURL.path
         let modulePath = module.standardizedFileURL.path
-        guard modulePath.hasPrefix(rootPath + "/") else { return "test" }
+        guard modulePath.hasPrefix(rootPath + "/") else { return task }
         let relative = modulePath.dropFirst(rootPath.count + 1).split(separator: "/").joined(separator: ":")
-        return ":\(relative):test"
+        return ":\(relative):\(task)"
+    }
+
+    /// The project's launch configuration target, else the Kotlin target in settings.
+    public func kotlinTargetChoice(projectRoot: URL) -> KotlinTargetChoice {
+        if let raw = settings.launchConfiguration(for: .kotlin, projectRoot: projectRoot.path)?.kotlinTarget {
+            return KotlinTargetChoice(raw)
+        }
+        return settings.kotlinTarget
     }
 
     func environment(language: Language, executable: URL) -> [String: String] {

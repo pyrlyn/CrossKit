@@ -8,7 +8,7 @@ CrossKit is an Xcode Source Editor Extension that bridges Xcode to Language Serv
 | Zig | [`zls`](https://github.com/zigtools/zls) | `.zig` |
 | Rust | [`rust-analyzer`](https://rust-analyzer.github.io) | `.rs` |
 
-It provides completion, go to definition, find references, diagnostics, and hover info as **Editor › CrossKit** menu commands, which you can bind to keys. It also runs tests with each language's native runner (`zig test` / `zig build test`, `cargo test` / `cargo nextest`, JUnit 5 through Gradle) and starts debug sessions (lldb-dap, lldb, CodeLLDB, or JDWP with jdb). A detailed user guide is in [docs/GUIDE.md](docs/GUIDE.md). Everything is configured in a native settings window, so you never edit a config file. CrossKit makes no network calls; it only launches local server binaries.
+It provides completion, go to definition, find references, diagnostics, and hover info as **Editor › CrossKit** menu commands, which you can bind to keys. It also runs tests with each language's native runner (`zig test` / `zig build test`, `cargo test` / `cargo nextest`, JUnit 5 through Gradle) starts debug sessions (lldb-dap, lldb, CodeLLDB, or JDWP with jdb), builds and runs programs, handles Kotlin Multiplatform JVM and Kotlin/Native targets, renders Compose Multiplatform `@Preview` functions in a Preview window, and approximates Code Lens, inlay hints, and ErrorLens with `// [CrossKit]` comments. A detailed user guide is in [docs/GUIDE.md](docs/GUIDE.md). Everything is configured in a native settings window, so you never edit a config file. CrossKit makes no network calls; it only launches local server binaries.
 
 ## How it works
 
@@ -38,12 +38,13 @@ Open **CrossKit.app**, the menu bar icon, or **Editor › CrossKit › Open Cros
 
 * **Turn the language on or off.**
 * **Pick the server binary.** CrossKit auto-detects it by default. You can also pick one from the list of detected binaries, choose a file with **Choose…**, or go back to auto-detection.
-* **Turn individual features on or off:** completion, go to definition, find references, diagnostics, hover, running tests, and debugging.
+* **Turn individual features on or off:** completion, go to definition, find references, diagnostics, hover, running tests, debugging, Build & Run, Code Lens, inlay hints, ErrorLens, and (Kotlin) Compose Preview.
+* **Kotlin targets:** the target for Multiplatform modules (auto, JVM, Kotlin/Native for this Mac, or a named target), the debugger for Kotlin/Native binaries, and whether to keep the Gradle daemon running.
 * **Configure debugging:** the debugger (auto-detected or forced), its binary, and the Kotlin JDWP port. Per-project launch configurations are listed and editable at the bottom of the window.
 * **Configure test running:** the runner (auto-detected or forced), the test tool binary (auto-detected or chosen), and extra arguments such as `--offline`.
 * **See live server status:** running (with pid and workspace), starting, restarting, stopped, error, or not found. The last error is shown with the tail of the server's stderr, next to **Restart** and **Stop** buttons.
 
-The idle timeout and the test timeout are global settings. Changes are saved immediately; there is no Save button.
+The idle timeout, the test timeout, the inline-annotation options (what lenses, hints, and ErrorLens show, and where hints go), how long Run File waits for a program, and the Compose preview scale and auto-refresh are global settings. Changes are saved immediately; there is no Save button.
 
 ### Auto-detection order
 
@@ -114,7 +115,15 @@ CROSSKIT_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" xcodebuild
 | Run Test at Cursor | – | Runs only the test that encloses the cursor. |
 | Debug File at Cursor | – | Builds the program and debugs it with a breakpoint on the cursor line. |
 | Debug Test at Cursor | – | Builds and debugs only the test that encloses the cursor. |
-| Clear CrossKit Annotations | – | Removes every `// [CrossKit]` line. |
+| Build Project | – | Builds the project (or loose file) for the current language and Kotlin target; the alert shows success or the compiler output. |
+| Run File | – | Builds and runs the file's `main`; short runs show their output in the alert, long ones keep running in the Run window. |
+| Show Compose Preview at Cursor | – | Renders the file's `@Preview` composables to PNG on the desktop JVM and shows them in the Preview window, focused on the one at the cursor. |
+| Show Code Lenses | `textDocument/documentSymbol`, `textDocument/references` | Inserts `// [CrossKit] ◆ N references · ▶ Run · ⚙ Debug` above declarations (Run Test / Debug Test above tests, Preview above previews). |
+| Show Inlay Hints | `textDocument/inlayHint` | Inserts type and parameter hints above the line (`‹: i32›`) or at its end (`  // [CrossKit] » total: i32, a: 1`). |
+| Show ErrorLens Diagnostics | diagnostics | Appends the most severe diagnostic of each line at its end: `  // [CrossKit] ✖ error: …`. |
+| Refresh Inline Annotations | all of the above | Refreshes every enabled kind; never duplicates. |
+| Clear Inline Annotations | – | Removes lenses, hints, and ErrorLens comments only. |
+| Clear CrossKit Annotations | – | Removes every `// [CrossKit]` line and trailing `// [CrossKit]` segment. |
 | Open CrossKit Settings | – | Brings up the host app. |
 
 Annotation lines are ordinary `//` comments in all three languages and always start with `// [CrossKit]`, so you can remove them with one command. Undo works as usual.
@@ -127,7 +136,7 @@ Annotation lines are ordinary `//` comments in all three languages and always st
 | Rust | `cargo nextest run` when cargo-nextest is installed, otherwise `cargo test` | `#[test]`, `#[tokio::test]`, and similar attributes inside nested `mod`s; when rust-analyzer is available, its `experimental/runnables` supply the exact test paths and cargo arguments |
 | Kotlin | `./gradlew test` when the project has a wrapper, otherwise `gradle test`; filtered with `--tests` | `@Test`, `@ParameterizedTest`, `@RepeatedTest`, and `@TestFactory` functions, including `@Nested` inner classes |
 
-Every run also appears in the host app's **Test Results** window: the command, working directory, duration, full output, and a table of tests with status, time, failure output, and a `file:line` button that opens the test in Xcode. Gradle results come from the JUnit XML reports in `build/test-results/test`. If a runner or toolchain is missing, the alert says what to install or which setting to change. Tests run against the saved file, and you get a warning if the buffer has unsaved changes. Runs time out after the configured test timeout (15 minutes by default); the whole process group is then stopped.
+Every run also appears in the host app's **Test Results** window: the command, working directory, duration, full output, and a table of tests with status, time, failure output, and a `file:line` button that opens the test in Xcode. Gradle results come from the JUnit XML reports in `build/test-results/test` (`build/test-results/<target>Test` in Multiplatform modules). If a runner or toolchain is missing, the alert says what to install or which setting to change. Tests run against the saved file, and you get a warning if the buffer has unsaved changes. Runs time out after the configured test timeout (15 minutes by default); the whole process group is then stopped.
 
 ## Debugging
 
@@ -141,18 +150,27 @@ Every run also appears in the host app's **Test Results** window: the command, w
 
 The host app's **Debugger** window shows sessions with Continue / Step Over / Step Into / Step Out / Pause / Stop, the call stack (click to open the line in Xcode), local variables, and program output. Debuggers are auto-detected from Xcode, the Command Line Tools, Homebrew LLVM, and VS Code/Cursor extensions (CodeLLDB), and can be overridden per language. Each project gets an auto-saved **launch configuration** (program or main class, arguments, environment, working directory, test binary arguments), editable in the settings window. Stopping a session, a program exit, or quitting CrossKit leaves no processes behind.
 
+## Build & Run, Kotlin targets, previews, inline annotations
+
+* **Build Project / Run File:** `zig build-exe` or `zig build install`, `cargo build`, and Gradle per Kotlin target. Every build and run is listed in the host app's **Run** window with its commands, live output, exit code, and a **Stop** button.
+* **Kotlin Multiplatform targets** are read from `build.gradle(.kts)`. The file's source set decides first (`jvmMain` → JVM, `macosArm64Main`/`nativeMain` → Native), then the launch configuration's **Kotlin target**, then the setting. JVM targets use `<target>MainClasses`, `<target>Test`, and the JDWP debug path. Kotlin/Native uses `linkDebugExecutable<Target>` and runs or debugs the `.kexe` with lldb-dap (or lldb / CodeLLDB); **Debug Test at Cursor** links `linkDebugTest<Target>` and runs `test.kexe --ktest_filter=…`.
+* **Compose previews:** CrossKit finds `@Preview` functions, compiles the module's JVM target, and renders each preview headless with Compose Desktop's `ImageComposeScene` through a tiny renderer compiled once with `javac`. PNGs go to `~/Library/Caches/CrossKit/Preview`; the **Preview** window shows them, highlights the one at the cursor, and re-renders on save.
+* **Inline annotations:** lenses above declarations, inlay hints above the line or at its end, and ErrorLens at the end of the line, as `// [CrossKit]` comments. Each kind can be turned off per language; refreshing replaces instead of duplicating, and lines that end inside a multi-line string or comment get their annotation above instead.
+
 See [docs/GUIDE.md](docs/GUIDE.md) for the detailed user guide.
 
 ## Limitations
 
 These are XcodeKit constraints and the workarounds CrossKit uses:
 
-* **No custom UI inside the editor.** Extensions can only run menu commands that edit the buffer and selection. There is no completion pop-up, no squiggles, no hover tooltip, and no live diagnostics; every feature runs on demand. Extra information is inserted as removable comment lines, and messages appear as Xcode alerts, because XcodeKit can only show text as an error.
+* **No custom UI inside the editor.** Extensions can only run menu commands that edit the buffer and selection. There is no completion pop-up, no squiggles, no hover tooltip, no real Code Lens or inlay hints, and no live diagnostics; every feature runs on demand, and inline annotations are comments that you refresh with a command. Extra information is inserted as removable comment lines, and messages appear as Xcode alerts, because XcodeKit can only show text as an error.
 * **Xcode does not tell extensions the file path.** The host asks Xcode through Apple Events which source documents are open and picks the one whose contents match the buffer. If that fails, for example because Automation permission was denied, the buffer goes into a scratch project in `~/Library/Caches/CrossKit/Scratch`. Single-file features still work, but cross-file results refer to the scratch project.
 * **Columns.** LSP positions use UTF-16 code units, the same as XcodeKit's. If you indent with tabs, Xcode may report columns with tabs expanded, which can shift the column slightly.
 * **One request at a time.** The bridge handles requests sequentially, so a slow Kotlin request delays the next command.
 * **Kotlin without a build file** (a loose `.kt` file) has no stdlib classpath, so `println` and similar are reported as unresolved. In Gradle or Maven projects, kotlin-language-server resolves the classpath with Gradle or Maven, which may use the network on their side. CrossKit itself never does.
 * **Cold start.** The first request per language waits for the server to start; Kotlin takes the longest. Empty results during the first minute are retried briefly while the server indexes.
+* **Kotlin targets** come from a simple parse of `build.gradle(.kts)`; targets declared in convention plugins need to be named in the settings or launch configuration. Only the host macOS target runs; other native targets can only be built.
+* **Compose previews** render on the desktop JVM: no Android resources, `@PreviewParameter`, multipreview annotations, interaction, or animation.
 * **Signing.** Ad-hoc signed builds are meant for local use. For distribution, sign with a Developer ID, ideally with a provisioning profile for the App Group, and notarize.
 * **Not covered by automated tests.** The XcodeKit glue (`SourceEditorCommand`) can only run inside Xcode. Everything below it, from the editor command engine through the bridge, server manager, and real servers, is covered by tests.
 
@@ -178,6 +196,8 @@ scripts/test.sh
 * **Test-running unit tests:** test discovery for each language, output parsers (`zig test`, `zig build test`, libtest, nextest, JUnit XML, Gradle console), runner selection and command construction against a fake toolchain, missing-tool messages, and editor test markers.
 * **Debugging unit tests:** debugger detection against a fake toolchain, launch-plan generation for every language and target, launch-configuration auto-save and overrides, argument/environment parsing, lldb command generation, Cargo artifact parsing, Kotlin class resolution, and unsaved-annotation line mapping.
 * **Debugging end-to-end tests** (`DebugEndToEndTests`): Zig and Rust debug a program and a single test through lldb-dap, check that the breakpoint is hit at the right line with the right local variables, run to a clean exit, and check that no adapter or debuggee process is left. A Zig test also runs the generated lldb Terminal script in batch mode. Two Kotlin tests (a program, and a JUnit test via Gradle) start the JVM with JDWP, attach jdb exactly like the Terminal script, hit the breakpoint, read the locals, and exit cleanly.
+* **Feature unit tests** (`FeatureUnitTests.swift`): Kotlin target parsing and selection, task and output paths, Native and JVM launch plans (link tasks, `--ktest_filter`, `-Pcrosskit.target`, launch-config overrides, non-host errors, Gradle daemon flags), Multiplatform test tasks, `@Preview` discovery, inline annotation placement, merging, refresh, clear, unsafe line ends, LSP inlay-hint and symbol conversion, Build/Run/Preview command messages, and settings round trips.
+* **Feature end-to-end tests** (`FeatureEndToEndTests`), with fixtures in `build/e2e` and the Gradle daemon off: Zig and Rust Build Project and Run File; a Kotlin Multiplatform project built, run, tested, and debugged with lldb-dap on Kotlin/Native (`macosArm64`), then run and tested on the JVM; a Compose Multiplatform module whose three previews are rendered to PNGs of the expected size; and Code Lens, inlay hints, ErrorLens, refresh, and clear against rust-analyzer and zls. Each skips when its toolchain (or, for Kotlin, its offline Gradle caches; set `CROSSKIT_E2E_NETWORK=1` to allow downloads) is missing.
 * **Test-running end-to-end tests** (`TestRunEndToEndTests`), one per language: a temporary project with one passing and one failing test is run through the bridge with **Run Tests in File** and **Run Test at Cursor**, checking statuses, failure output, `file:line` links, and markers. Each test skips if its toolchain is missing. The Kotlin test passes `--offline` when JUnit is already in the Gradle cache.
 
 ## Layout
@@ -188,7 +208,11 @@ Sources/CrossKitCore/            shared framework: framing, JSON-RPC, LSP client
                                  server manager, settings, auto-detection, bridge, editor engine
 Sources/CrossKitCore/Testing/    test discovery, runners, result parsers
 Sources/CrossKitCore/Debugging/  debugger detection, launch planning, DAP client, debug sessions
-Sources/CrossKitApp/             host app: settings, Test Results and Debugger windows, menu bar, Xcode lookup
+Sources/CrossKitCore/Kotlin/     Kotlin Multiplatform target parsing and selection
+Sources/CrossKitCore/Running/    Build Project and Run File
+Sources/CrossKitCore/Preview/    @Preview discovery, embedded renderer, preview rendering
+Sources/CrossKitCore/Annotations/ Code Lens, inlay hint, and ErrorLens comment placement
+Sources/CrossKitApp/             host app: settings, Test Results, Debugger, Run and Preview windows, menu bar, Xcode lookup
 docs/GUIDE.md                    detailed user guide
 Sources/CrossKitExtension/       XcodeKit extension (commands → bridge → buffer edits)
 Tests/CrossKitCoreTests/         unit + end-to-end tests

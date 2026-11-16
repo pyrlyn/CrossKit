@@ -88,8 +88,18 @@ public enum Feature: String, CaseIterable, Codable, Identifiable, Sendable {
     case hover
     case tests
     case debug
+    case run
+    case codeLens
+    case inlayHints
+    case errorLens
+    case preview
 
     public var id: String { rawValue }
+
+    /// Compose previews exist only for Kotlin.
+    public func applies(to language: Language) -> Bool {
+        self != .preview || language == .kotlin
+    }
 
     public var displayName: String {
         switch self {
@@ -100,6 +110,11 @@ public enum Feature: String, CaseIterable, Codable, Identifiable, Sendable {
         case .hover: return "Hover"
         case .tests: return "Run Tests"
         case .debug: return "Debugging"
+        case .run: return "Build & Run"
+        case .codeLens: return "Code Lens"
+        case .inlayHints: return "Inlay Hints"
+        case .errorLens: return "ErrorLens"
+        case .preview: return "Compose Preview"
         }
     }
 }

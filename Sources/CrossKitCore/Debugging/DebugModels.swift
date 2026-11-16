@@ -39,8 +39,11 @@ public enum DebuggerKind: String, Codable, CaseIterable, Identifiable, Sendable 
     public var isJVM: Bool { self == .jdb || self == .jdwpAttach }
 
     public static func choices(for language: Language) -> [DebuggerKind] {
-        language == .kotlin ? [.jdb, .jdwpAttach] : [.lldbDAP, .lldb, .codelldb]
+        language == .kotlin ? [.jdb, .jdwpAttach] : nativeChoices
     }
+
+    /// Debuggers for native code: Zig, Rust and Kotlin/Native binaries.
+    public static let nativeChoices: [DebuggerKind] = [.lldbDAP, .lldb, .codelldb]
 }
 
 public enum DebugTarget: String, Codable, Sendable {
@@ -66,11 +69,15 @@ public struct LaunchConfiguration: Codable, Equatable, Identifiable, Sendable {
     public var buildBeforeLaunch: Bool
     /// Extra arguments for the test binary (Debug Test only), e.g. `--nocapture`.
     public var testArguments: [String]
+    /// Kotlin only: target to build, run and debug (`auto`, `jvm`, `native` or a Gradle target name);
+    /// nil follows the Kotlin target in CrossKit settings.
+    public var kotlinTarget: String?
     public var updatedAt: Date
 
     public init(language: Language, projectRoot: String, program: String = "", arguments: [String] = [],
                 environment: [String: String] = [:], workingDirectory: String = "", buildBeforeLaunch: Bool = true,
-                testArguments: [String] = [], updatedAt: Date = Date()) {
+                testArguments: [String] = [], kotlinTarget: String? = nil, updatedAt: Date = Date()) {
+        self.kotlinTarget = kotlinTarget
         self.language = language
         self.projectRoot = projectRoot
         self.program = program
@@ -168,6 +175,10 @@ public struct LaunchPlan: Codable, Equatable, Sendable {
     public var jdwpPort: Int
     /// JVM only: class for the jdb breakpoint (`stop at <class>:<line>`).
     public var jvmBreakpointClass: String?
+    /// Kotlin only: the target being built (JVM or Kotlin/Native).
+    public var kotlinTarget: KotlinTargetInfo?
+    /// lldb commands run before the target is created (e.g. Kotlin/Native's pretty printers).
+    public var lldbInitCommands: [String] = []
 
     public enum ProgramSource: Codable, Equatable, Sendable {
         case path(String)
@@ -179,6 +190,8 @@ public struct LaunchPlan: Codable, Equatable, Sendable {
         case jvmMain(mainClass: String)
         /// JVM: run this Gradle test command; the init script puts the JDWP agent into the test JVM.
         case gradleTest(command: [String])
+        /// Kotlin/Native: the newest `.kexe` a link task wrote into this directory.
+        case nativeExecutable(directory: String)
     }
 }
 
