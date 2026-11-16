@@ -96,6 +96,9 @@ public struct LaunchPlanner: Sendable {
         case .kotlin:
             try planKotlin(&plan, file: file, root: root, test: test, config: config, text: text, cursorLine: cursorLine,
                            project: kotlinTarget!.project, kotlinTarget: kotlinTarget!.target, purpose: purpose)
+        case .cpp: try planCpp(&plan, file: file, root: root, test: test, config: config, text: text, purpose: purpose)
+        case .javascript, .typescript: try planScript(&plan, file: file, root: root, test: test, config: config, text: text, purpose: purpose)
+        case .wasm: try planWasm(&plan, file: file, root: root, test: test, config: config, text: text, purpose: purpose)
         }
         return plan
     }
