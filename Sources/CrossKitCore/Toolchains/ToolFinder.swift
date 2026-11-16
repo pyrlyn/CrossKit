@@ -32,7 +32,12 @@ public struct ToolFinder: Sendable {
 
     /// Apple clang from Xcode / the Command Line Tools first (its llvm-cov matches its profile format), then mise LLVM.
     public func clangxx() -> URL? {
-        locator.findTools(named: "clang++", miseToolDirectories: ["llvm", "aqua-llvm-llvm-project", "conda-clang"],
+        // The /usr/bin shim (xcrun) adds the macOS SDK; the toolchain binary alone finds no standard headers.
+        if developerDirectory == nil, FileManager.default.isExecutableFile(atPath: "/usr/bin/clang++"),
+           developerBinDirectories.contains(where: { FileManager.default.isExecutableFile(atPath: $0.appendingPathComponent("clang++").path) }) {
+            return URL(fileURLWithPath: "/usr/bin/clang++")
+        }
+        return locator.findTools(named: "clang++", miseToolDirectories: ["llvm", "aqua-llvm-llvm-project", "conda-clang"],
                           preferredDirectories: developerBinDirectories).first
     }
 

@@ -86,6 +86,7 @@ public struct LaunchPlanner: Sendable {
             // A user-chosen program: launch it as is.
             return plan
         } else if purpose != .build, config.program.isEmpty, !TestDiscovery.hasMain(language, text: text),
+                  language != .wasm, !(language == .cpp && CppTesting.projectRoot(for: file) != nil),
                   !(language == .rust && rustHasBinary(root)), !(kotlinTarget?.target.platform == .native) {
             throw DebugError.noMain(file.lastPathComponent)
         }

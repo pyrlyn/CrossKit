@@ -30,6 +30,7 @@
 		456E0F098F1B49FF755F1D5E /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FDCD8AAA0F7C1C1B08A247C /* AppModel.swift */; };
 		46F0E93AF7EB3CE5EE2B5CC6 /* WasmBinary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D19CB63D1970931E5E727C /* WasmBinary.swift */; };
 		564E46D700DE14C5B2F0247E /* ChildProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDBC9F0BC3534806D367886E /* ChildProcess.swift */; };
+		59ED4CEC921B1E7BB5C56E87 /* CDPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C3E3B6B488AFDA07E90D28 /* CDPClient.swift */; };
 		5FD755C466BB738900B1F2E7 /* TestDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9DA987BFFE7A18155236CA6 /* TestDiscovery.swift */; };
 		607C43CEAE35DA10C0F28756 /* DebuggerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220176F96A66B2BFD6FFF1A2 /* DebuggerView.swift */; };
 		636F8799A4087AFFA28206AC /* XcodeDocumentLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A782BEED5BA1A1DE7AECF1 /* XcodeDocumentLocator.swift */; };
@@ -56,6 +57,7 @@
 		A56CFBEBDF92E73DD65D7FCF /* JSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 569D0633200B747F2461EAC5 /* JSONValue.swift */; };
 		B298ED33D2FF6D3352F0F068 /* BridgeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D329CA047C6E9F7E547B701 /* BridgeHandler.swift */; };
 		B4C04C5A03D7D4E31D4963E0 /* AppModel+Features.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDAF9E8AC825D7E44632AF8 /* AppModel+Features.swift */; };
+		B68971C51FCC3D6CC8E51F19 /* DebugSession+Inspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9482F5A13981455F043C8A80 /* DebugSession+Inspector.swift */; };
 		BBF5A8DED7FEC6A5AEA061E3 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C609CD82124EF359C39AFBA7 /* SettingsStore.swift */; };
 		C9BA3CD9451DBC2915E4C9E3 /* SharedPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 089E63A52EED29A80180FB62 /* SharedPaths.swift */; };
 		CC3BD39CFB7CF4BAF8A122B6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5229CAEB5423E166383C34D2 /* SettingsView.swift */; };
@@ -187,6 +189,7 @@
 		8D329CA047C6E9F7E547B701 /* BridgeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeHandler.swift; sourceTree = "<group>"; };
 		8D8FCF9BCF24CA006C38DB4E /* JSTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSTesting.swift; sourceTree = "<group>"; };
 		93C37ABE8720F04CA0ED207F /* FeatureEndToEndTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureEndToEndTests.swift; sourceTree = "<group>"; };
+		9482F5A13981455F043C8A80 /* DebugSession+Inspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DebugSession+Inspector.swift"; sourceTree = "<group>"; };
 		964DFD5B4F748A8C5915D0FC /* CppTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CppTesting.swift; sourceTree = "<group>"; };
 		98C3E29AC37818F4B4945439 /* WasmHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WasmHarness.swift; sourceTree = "<group>"; };
 		A4CB1870261975867CACFDA3 /* CoverageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverageModels.swift; sourceTree = "<group>"; };
@@ -203,6 +206,7 @@
 		C9A39650FAE0EF525DEE46D1 /* InlineAnnotations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineAnnotations.swift; sourceTree = "<group>"; };
 		CDBC9F0BC3534806D367886E /* ChildProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChildProcess.swift; sourceTree = "<group>"; };
 		CE85105705A18F54C2881B88 /* CrossKit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CrossKit.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4C3E3B6B488AFDA07E90D28 /* CDPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CDPClient.swift; sourceTree = "<group>"; };
 		D72C73C3039C3E3886CEFEEC /* ServerLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerLocator.swift; sourceTree = "<group>"; };
 		D97412815C685E3F527E0D15 /* CrossKitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossKitApp.swift; sourceTree = "<group>"; };
 		D9E33980E1836BF47128DCED /* DebugService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugService.swift; sourceTree = "<group>"; };
@@ -385,10 +389,12 @@
 		B31CF405270540532383F8FC /* Debugging */ = {
 			isa = PBXGroup;
 			children = (
+				D4C3E3B6B488AFDA07E90D28 /* CDPClient.swift */,
 				C1732DA81CA35FAD6E2A4928 /* DAPClient.swift */,
 				76C6585E68ED4908C2772B8B /* DebugModels.swift */,
 				D9E33980E1836BF47128DCED /* DebugService.swift */,
 				3A893D40E26A63AA83C1797F /* DebugSession.swift */,
+				9482F5A13981455F043C8A80 /* DebugSession+Inspector.swift */,
 				72D78BE12846C35D008FF4D0 /* LaunchPlanner.swift */,
 				EF70B617F3A8DE9568289F77 /* LaunchPlanner+Languages.swift */,
 			);
@@ -660,6 +666,7 @@
 				B298ED33D2FF6D3352F0F068 /* BridgeHandler.swift in Sources */,
 				8CD20E0C5F39596EF0540C34 /* BridgePort.swift in Sources */,
 				8DEDAF7AA0CB35E61236E8DF /* BridgeProtocol.swift in Sources */,
+				59ED4CEC921B1E7BB5C56E87 /* CDPClient.swift in Sources */,
 				564E46D700DE14C5B2F0247E /* ChildProcess.swift in Sources */,
 				3512152FDBCCAED5DA96068E /* CoverageModels.swift in Sources */,
 				292C6896499F22A13351B5E3 /* CoverageService.swift in Sources */,
@@ -667,6 +674,7 @@
 				187AC2574B2785B92E5E2C3A /* DAPClient.swift in Sources */,
 				92DEA41461C95DD766AC7916 /* DebugModels.swift in Sources */,
 				74274D9978FCA2216EC72853 /* DebugService.swift in Sources */,
+				B68971C51FCC3D6CC8E51F19 /* DebugSession+Inspector.swift in Sources */,
 				FB71C00E3FADBEC98835DF25 /* DebugSession.swift in Sources */,
 				77AA724605D4144FB025BB89 /* EditorCommandEngine.swift in Sources */,
 				153C7BB55C7813F4AB674117 /* InlineAnnotations.swift in Sources */,
