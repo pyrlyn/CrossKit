@@ -19,11 +19,37 @@ public enum TestDiscovery {
     static func zig(_ lines: [String]) -> [DiscoveredTest] {
         lines.enumerated().compactMap { index, line in
             guard let match = zigTest.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
-            let quoted = Range(match.range(at: 1), in: line).map { String(line[$0]) }
+            // Zig reports (and `--test-filter` matches) the decoded name, so decode escapes like `\"`.
+            let quoted = Range(match.range(at: 1), in: line).map { unescapeZigString(String(line[$0])) }
             let ident = Range(match.range(at: 2), in: line).map { String(line[$0]) }
             let name = quoted ?? ident ?? ""
             return DiscoveredTest(name: name.isEmpty ? "(anonymous test)" : name, filter: name, line: index)
         }
+    }
+
+    /// Decodes the escape sequences of a Zig string literal body (`\n`, `\t`, `\r`, `\\`, `\'`, `\"`, `\xNN`, `\u{N}`).
+    static func unescapeZigString(_ body: String) -> String {
+        guard body.contains("\\") else { return body }
+        var result = ""
+        var chars = body.makeIterator()
+        while let c = chars.next() {
+            guard c == "\\", let e = chars.next() else { result.append(c); continue }
+            switch e {
+            case "n": result.append("\n")
+            case "t": result.append("\t")
+            case "r": result.append("\r")
+            case "x":
+                let hex = String([chars.next(), chars.next()].compactMap { $0 })
+                if let v = UInt8(hex, radix: 16) { result.unicodeScalars.append(Unicode.Scalar(v)) } else { result += "\\x" + hex }
+            case "u":
+                var digits = ""
+                if chars.next() == "{" { while let d = chars.next(), d != "}" { digits.append(d) } }
+                if let v = UInt32(digits, radix: 16), let scalar = Unicode.Scalar(v) { result.unicodeScalars.append(scalar) }
+                else { result += "\\u{" + digits + "}" }
+            default: result.append(e)
+            }
+        }
+        return result
     }
 
     // MARK: Rust: #[test]-like attributes followed by `fn name`, with inline `mod` nesting
