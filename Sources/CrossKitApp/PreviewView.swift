@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import CrossKitCore
 
 /// Compose previews of one Kotlin file, like Xcode's canvas for SwiftUI.

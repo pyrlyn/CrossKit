@@ -216,6 +216,43 @@ final class KotlinTargetTests: XCTestCase {
         let config = try XCTUnwrap(settings.launchConfigurations().first)
         XCTAssertNil(config.kotlinTarget)
     }
+
+    func testPreviewRendererIsCachedPerJDKAndCompiledAtomically() throws {
+        // Fake JDKs whose javac only creates the class file in the -d directory.
+        let javac = """
+        #!/bin/sh
+        while [ $# -gt 0 ]; do [ "$1" = "-d" ] && d="$2"; shift; done
+        touch "$d/\(PreviewRendererSource.className).class"
+        """
+        for jdk in ["jdk-17", "jdk-21"] {
+            try makeExec("\(jdk)/bin/java")
+            let url = try write("\(jdk)/bin/javac", javac)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
+        let previews = home.appendingPathComponent("previews")
+        let service = PreviewService(planner: planner, directory: previews)
+        let java17 = home.appendingPathComponent("jdk-17/bin/java")
+        let first = try service.compileRenderer(java: java17)
+        XCTAssertEqual(try service.compileRenderer(java: java17).path, first.path, "compiled once per JDK")
+        let other = try service.compileRenderer(java: home.appendingPathComponent("jdk-21/bin/java"))
+        XCTAssertNotEqual(other.path, first.path, "a different JDK gets its own renderer classes")
+        for dir in [first, other] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("\(PreviewRendererSource.className).class").path))
+        }
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: previews.path).filter { $0.hasPrefix("renderer-tmp-") }
+        XCTAssertEqual(leftovers, [], "scratch directories are removed")
+    }
+
+    func testRunServiceKeepsOnlyRecentFinishedRuns() async throws {
+        try makeExec("mise/installs/zig/0.17.1/zig")
+        let file = try write("app/main.zig", "pub fn main() void {}\n")
+        let service = RunService(planner: planner)
+        for _ in 0..<(RunService.maxFinishedRuns + 3) {
+            let run = try await service.build(language: .zig, file: file, text: "pub fn main() void {}\n")
+            XCTAssertEqual(run.state, .succeeded, run.output)
+        }
+        XCTAssertEqual(service.allRuns.count, RunService.maxFinishedRuns + 1, "the oldest finished runs are dropped")
+    }
 }
 
 // MARK: Compose previews

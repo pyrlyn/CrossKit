@@ -182,23 +182,31 @@ public final class PreviewService: @unchecked Sendable {
         return result
     }
 
-    /// Compiles the renderer once per source version (`javac` next to `java`).
+    /// Compiles the renderer once per source version and JDK (`javac` next to `java`). The JDK is part of the
+    /// cache key because classes compiled by a newer JDK do not load on an older `java` chosen later in settings.
+    /// Compilation goes to a scratch directory that is renamed into place, so concurrent renders never load a
+    /// half-written class file.
     func compileRenderer(java: URL) throws -> URL {
+        let fm = FileManager.default
         var hash: UInt64 = 1469598103934665603
-        for b in PreviewRendererSource.java.utf8 { hash = (hash ^ UInt64(b)) &* 1099511628211 }
+        for b in (PreviewRendererSource.java + "\u{0}" + java.resolvingSymlinksInPath().path).utf8 {
+            hash = (hash ^ UInt64(b)) &* 1099511628211
+        }
         let dir = directory.appendingPathComponent("renderer-\(String(hash, radix: 36))")
         let classFile = dir.appendingPathComponent("\(PreviewRendererSource.className).class")
-        if FileManager.default.fileExists(atPath: classFile.path) { return dir }
+        if fm.fileExists(atPath: classFile.path) { return dir }
         let javac = java.deletingLastPathComponent().appendingPathComponent("javac")
-        guard FileManager.default.isExecutableFile(atPath: javac.path) else {
+        guard fm.isExecutableFile(atPath: javac.path) else {
             throw DebugError.toolNotFound("javac", hint: "CrossKit needs a full JDK (not a JRE) to compile its preview renderer. \(DebuggerLocator.installHint(.jdb))")
         }
-        let source = dir.appendingPathComponent("src/\(PreviewRendererSource.className).java")
-        try FileManager.default.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let scratch = directory.appendingPathComponent("renderer-tmp-\(UUID().uuidString.prefix(8).lowercased())")
+        defer { try? fm.removeItem(at: scratch) }
+        let source = scratch.appendingPathComponent("src/\(PreviewRendererSource.className).java")
+        try fm.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
         try PreviewRendererSource.java.write(to: source, atomically: true, encoding: .utf8)
         let process = Process()
         process.executableURL = javac
-        process.arguments = ["-nowarn", "-d", dir.path, source.path]
+        process.arguments = ["-nowarn", "-d", scratch.path, source.path]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -206,6 +214,12 @@ public final class PreviewService: @unchecked Sendable {
         let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw PreviewError.renderFailed("javac failed: \(output)") }
+        do {
+            try fm.moveItem(at: scratch, to: dir)
+        } catch {
+            // Another render may have finished compiling the same renderer first.
+            guard fm.fileExists(atPath: classFile.path) else { throw error }
+        }
         return dir
     }
 

@@ -196,10 +196,18 @@ public final class RunService: @unchecked Sendable {
         let run = ProgramRun(id: UUID().uuidString, mode: mode, title: plan.title, language: language,
                              target: plan.kotlinTarget?.displayName, projectRoot: plan.projectRoot, commands: [], program: nil,
                              startedAt: Date(), finishedAt: nil, state: .building, exitCode: nil, output: "", error: nil)
-        lock.withLock { runs[run.id] = run }
+        lock.withLock {
+            runs[run.id] = run
+            // Keep memory bounded (each run holds up to ~2 MB of output): drop the oldest finished runs.
+            let finished = runs.values.filter { !$0.state.isActive }.sorted { $0.startedAt < $1.startedAt }
+            for old in finished.prefix(max(0, finished.count - Self.maxFinishedRuns)) { runs.removeValue(forKey: old.id) }
+        }
         onChange?(run)
         return run
     }
+
+    /// Finished runs kept for `run(_:)` / `allRuns` (the host window shows at most 30).
+    static let maxFinishedRuns = 30
 
     /// Runs the plan's build commands; on failure marks the run failed and returns false.
     private func executeBuild(plan: LaunchPlan, run: inout ProgramRun) async -> Bool {
