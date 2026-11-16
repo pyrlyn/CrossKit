@@ -136,7 +136,10 @@ struct LanguageSection: View {
             }
             .disabled(!enabled.wrappedValue)
         } header: {
-            Text(language.displayName)
+            HStack(spacing: 6) {
+                FileIconView(language: language, size: 18)
+                Text(language.displayName)
+            }
         }
     }
 
