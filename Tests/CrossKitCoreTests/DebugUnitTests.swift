@@ -275,6 +275,28 @@ final class DebugUnitTests: XCTestCase {
         XCTAssertFalse(lldb.components(separatedBy: "\n").contains { $0.hasPrefix("touch") }, lldb)
     }
 
+    func testJDBSourcePathCoversSubprojectAndExtraSourceSets() throws {
+        let root = home.appendingPathComponent("multi")
+        let fm = FileManager.default
+        for dir in ["app/src/main/kotlin/demo", "app/src/integrationTest/kotlin", "app/src/jvmMain/kotlin", "src/main/kotlin"] {
+            try fm.createDirectory(at: root.appendingPathComponent(dir), withIntermediateDirectories: true)
+        }
+        try "".write(to: root.appendingPathComponent("settings.gradle.kts"), atomically: true, encoding: .utf8)
+        try "".write(to: root.appendingPathComponent("app/build.gradle.kts"), atomically: true, encoding: .utf8)
+        let file = root.appendingPathComponent("app/src/main/kotlin/demo/Main.kt").path
+        let plan = LaunchPlan(language: .kotlin, target: .file, debugger: .jdb, debuggerPath: "/jdk/bin/java", projectRoot: root.path,
+                              build: [], programSource: .path(""), arguments: [], environment: [:], workingDirectory: root.path,
+                              breakpoints: [Breakpoint(file: file, line: 3)], title: "Main.kt", jdwpPort: 0)
+        let paths = DebugService.jvmSourcePath(plan: plan).components(separatedBy: ":")
+        let app = root.appendingPathComponent("app/src").path
+        XCTAssertEqual(paths.first, "\(app)/main/kotlin", "the breakpoint file's module comes first")
+        XCTAssertTrue(paths.contains("\(app)/integrationTest/kotlin"))
+        XCTAssertTrue(paths.contains("\(app)/jvmMain/kotlin"))
+        XCTAssertTrue(paths.contains(root.appendingPathComponent("src/main/kotlin").path))
+        XCTAssertFalse(paths.contains("\(app)/jvmMain/java"), "missing non-default source set directories are skipped")
+        XCTAssertEqual(paths.count, Set(paths).count)
+    }
+
     func testLeftoverDebuggeeIsKilledOnlyIfItStillRunsTheProgram() throws {
         let process = try ChildProcess(executable: "/bin/sleep", arguments: ["30"], environment: [:], currentDirectory: nil,
                                        onStdout: { _ in }, onStderr: { _ in }, onExit: { _ in })

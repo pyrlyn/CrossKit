@@ -236,8 +236,7 @@ public final class DebugService: @unchecked Sendable {
     func writeJDBScript(jdb: String, address: String, breakpoint: String, plan: LaunchPlan, directory: URL) throws -> URL {
         // jdb reads .jdbrc from the current directory on start.
         try "\(breakpoint)\nrun\n".write(to: directory.appendingPathComponent(".jdbrc"), atomically: true, encoding: .utf8)
-        let sources = ["src/main/kotlin", "src/test/kotlin", "src/main/java", "src/test/java"]
-            .map { URL(fileURLWithPath: plan.projectRoot).appendingPathComponent($0).path }.joined(separator: ":")
+        let sources = Self.jvmSourcePath(plan: plan)
         let script = directory.appendingPathComponent("CrossKit Debug.command")
         try """
         #!/bin/sh
@@ -251,6 +250,39 @@ public final class DebugService: @unchecked Sendable {
     }
 
     // MARK: Helpers
+
+    /// jdb `-sourcepath`: every `src/<sourceSet>/{kotlin,java}` directory of the breakpoint file's Gradle module
+    /// and of the project root, so `list` and stepping find sources in subprojects and non-default source sets.
+    static func jvmSourcePath(plan: LaunchPlan) -> String {
+        let fm = FileManager.default
+        var modules = [URL(fileURLWithPath: plan.projectRoot)]
+        if let file = plan.breakpoints.first?.file {
+            var dir = URL(fileURLWithPath: file).deletingLastPathComponent()
+            let rootPath = URL(fileURLWithPath: plan.projectRoot).standardizedFileURL.path
+            while dir.standardizedFileURL.path.hasPrefix(rootPath + "/") {
+                if ["build.gradle.kts", "build.gradle"].contains(where: { fm.fileExists(atPath: dir.appendingPathComponent($0).path) }) {
+                    modules.insert(dir, at: 0)
+                    break
+                }
+                dir = dir.deletingLastPathComponent()
+            }
+        }
+        var paths: [String] = []
+        for module in modules {
+            let src = module.appendingPathComponent("src")
+            let sourceSets = ((try? fm.contentsOfDirectory(atPath: src.path)) ?? []).sorted()
+            // The conventional main/test directories come first and are always listed; other source sets
+            // (jvmMain, commonMain, integrationTest, …) only when they exist.
+            for set in ["main", "test"] + sourceSets {
+                let conventional = set == "main" || set == "test"
+                for language in ["kotlin", "java"] {
+                    let path = src.appendingPathComponent(set).appendingPathComponent(language).path
+                    if !paths.contains(path), conventional || fm.fileExists(atPath: path) { paths.append(path) }
+                }
+            }
+        }
+        return paths.joined(separator: ":")
+    }
 
     /// The debugger sees the saved file. If the buffer only differs by unsaved `// [CrossKit]` annotation
     /// lines, drop them and shift the cursor line so the breakpoint lands on the right source line.
