@@ -28,6 +28,11 @@ public enum SharedPaths {
         realHomeDirectory.appendingPathComponent("Library/Caches/CrossKit/Debug", isDirectory: true)
     }
 
+    /// Compose preview renderer and rendered PNGs.
+    public static var previewDirectory: URL {
+        realHomeDirectory.appendingPathComponent("Library/Caches/CrossKit/Preview", isDirectory: true)
+    }
+
     public static var scratchDirectory: URL {
         realHomeDirectory.appendingPathComponent("Library/Caches/CrossKit/Scratch", isDirectory: true)
     }

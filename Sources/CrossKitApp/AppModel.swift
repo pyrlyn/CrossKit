@@ -22,6 +22,12 @@ final class AppModel: ObservableObject {
     @Published var debugSessions: [DebugSessionSnapshot] = []
     @Published var debugTools: [Language: [(tool: String, path: String?)]] = [:]
     @Published var launchConfigurations: [LaunchConfiguration] = []
+    @Published var programRuns: [ProgramRun] = []
+    @Published var preview: PreviewResult?
+    @Published var previewImages: [String: NSImage] = [:]
+    @Published var previewRendering = false
+    @Published var previewError: String?
+    var previewFileDate: Date?
 
     private init() {
         manager = ServerManager(settings: settings, locator: locator)
@@ -33,6 +39,12 @@ final class AppModel: ObservableObject {
         }
         handler.debugService.onChange = { snapshot in
             Task { @MainActor in AppModel.shared.updateDebugSession(snapshot) }
+        }
+        handler.runService.onChange = { run in
+            Task { @MainActor in AppModel.shared.updateProgramRun(run) }
+        }
+        handler.onPreview = { result in
+            Task { @MainActor in AppModel.shared.showPreview(result) }
         }
         for language in Language.allCases {
             var status = ServerStatus(state: settings.isEnabled(language) ? .stopped : .disabled)
@@ -206,7 +218,9 @@ final class AppModel: ObservableObject {
         let manager = self.manager
         let done = DispatchSemaphore(value: 0)
         let debugService = handler.debugService
+        let runService = handler.runService
         Task.detached {
+            runService.stopAll()
             await debugService.stopAll()
             await manager.shutdownAll()
             done.signal()

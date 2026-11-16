@@ -5,6 +5,7 @@ public enum BridgeError: Error, LocalizedError {
     case featureDisabled(Feature, Language)
     case serverNotFound(Language)
     case unknownLanguage(String)
+    case unsupported(String)
 
     public var errorDescription: String? {
         switch self {
@@ -13,6 +14,7 @@ public enum BridgeError: Error, LocalizedError {
         case .serverNotFound(let l):
             return "\(l.serverBinaryName) was not found. Install it (\(l.installHint)) or choose the binary in CrossKit settings."
         case .unknownLanguage(let uti): return "CrossKit does not know the language of this file (\(uti))."
+        case .unsupported(let detail): return detail
         }
     }
 }

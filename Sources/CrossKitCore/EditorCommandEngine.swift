@@ -67,6 +67,14 @@ public enum EditorCommand: String, CaseIterable, Codable, Sendable {
     case runTestAtCursor
     case debugFileAtCursor
     case debugTestAtCursor
+    case buildProject
+    case runFile
+    case showPreview
+    case showCodeLenses
+    case showInlayHints
+    case showErrorLens
+    case refreshInlineAnnotations
+    case clearInlineAnnotations
     case openSettings
 
     public var displayName: String {
@@ -83,6 +91,14 @@ public enum EditorCommand: String, CaseIterable, Codable, Sendable {
         case .runTestAtCursor: return "Run Test at Cursor"
         case .debugFileAtCursor: return "Debug File at Cursor"
         case .debugTestAtCursor: return "Debug Test at Cursor"
+        case .buildProject: return "Build Project"
+        case .runFile: return "Run File"
+        case .showPreview: return "Show Compose Preview at Cursor"
+        case .showCodeLenses: return "Show Code Lenses"
+        case .showInlayHints: return "Show Inlay Hints"
+        case .showErrorLens: return "Show ErrorLens Diagnostics"
+        case .refreshInlineAnnotations: return "Refresh Inline Annotations"
+        case .clearInlineAnnotations: return "Clear Inline Annotations"
         case .openSettings: return "Open CrossKit Settings"
         }
     }
@@ -123,12 +139,20 @@ public struct EditorCommandEngine: Sendable {
         case .runTestAtCursor: return try await tests(buffer, operation: .runTests, scope: .cursor, transport: transport)
         case .debugFileAtCursor: return try await debug(buffer, operation: .debugFile, transport: transport)
         case .debugTestAtCursor: return try await debug(buffer, operation: .debugTest, transport: transport)
+        case .buildProject: return try await program(buffer, operation: .build, transport: transport)
+        case .runFile: return try await program(buffer, operation: .run, transport: transport)
+        case .showPreview: return try await preview(buffer, transport: transport)
+        case .showCodeLenses: return try await inline(buffer, kinds: [.codeLens], transport: transport)
+        case .showInlayHints: return try await inline(buffer, kinds: [.inlayHints], transport: transport)
+        case .showErrorLens: return try await inline(buffer, kinds: [.errorLens], transport: transport)
+        case .refreshInlineAnnotations: return try await inline(buffer, kinds: nil, transport: transport)
+        case .clearInlineAnnotations: return clearInline(buffer)
         }
     }
 
     /// Whether a command may run for minutes (the extension uses a longer bridge timeout).
     public static func isLongRunning(_ command: EditorCommand) -> Bool {
-        [.runTestsInFile, .runTestAtCursor, .debugFileAtCursor, .debugTestAtCursor].contains(command)
+        [.runTestsInFile, .runTestAtCursor, .debugFileAtCursor, .debugTestAtCursor, .buildProject, .runFile, .showPreview].contains(command)
     }
 
     // MARK: Debugging
@@ -144,6 +168,118 @@ public struct EditorCommandEngine: Sendable {
         var message = "▶ " + info.message
         if let warning = info.warning { message += "\n\n⚠︎ " + warning }
         return EditorOutcome(message: message)
+    }
+
+    // MARK: Build & Run, Compose previews
+
+    /// Build Project / Run File: the buffer is not modified; the result (or a still-running note) is the alert.
+    func program(_ buffer: EditorBuffer, operation: BridgeOperation, transport: BridgeTransport) async throws -> EditorOutcome {
+        let response = try await call(operation, buffer, transport)
+        guard let run = response.programRun else { throw EditorCommandError.nothing("Nothing was built.") }
+        // Kotlin titles carry the target ("Main.kt · Native macosArm64").
+        return EditorOutcome(message: run.summary)
+    }
+
+    func preview(_ buffer: EditorBuffer, transport: BridgeTransport) async throws -> EditorOutcome {
+        let caret = buffer.selection.start
+        let request = BridgeRequest(operation: .preview, text: buffer.text, line: caret.line, character: caret.column,
+                                    contentUTI: buffer.contentUTI, filePath: buffer.filePath)
+        let response = try await transport.send(request)
+        guard response.ok else { throw EditorCommandError.bridge(response.error ?? "CrossKit request failed") }
+        guard let result = response.preview else { throw EditorCommandError.nothing("No previews were rendered.") }
+        var lines = ["◉ " + result.summary]
+        if let focused = result.previews.first(where: { $0.id == result.focusedID }) {
+            lines.append(focused.error == nil ? "Showing \(focused.preview.name) in CrossKit › Preview." : "\(focused.preview.name) failed: \(focused.error ?? "")")
+        }
+        if let warning = result.warning { lines.append("⚠︎ " + warning) }
+        return EditorOutcome(message: lines.joined(separator: "\n"))
+    }
+
+    // MARK: Inline annotations (CodeLens, inlay hints, ErrorLens)
+
+    /// Replaces the requested kinds of inline annotations (all enabled kinds when `kinds` is nil).
+    func inline(_ buffer: EditorBuffer, kinds: [InlineKind]?, transport: BridgeTransport) async throws -> EditorOutcome {
+        let prepared = InlineAnnotations.prepare(buffer, removing: Set(kinds ?? InlineKind.allCases))
+        let request = BridgeRequest(operation: .inlineAnnotations, text: prepared.cleanText, line: prepared.caretLine,
+                                    character: prepared.caretColumn, contentUTI: buffer.contentUTI, filePath: buffer.filePath,
+                                    inlineKinds: kinds)
+        let response = try await transport.send(request)
+        guard response.ok else { throw EditorCommandError.bridge(response.error ?? "CrossKit request failed") }
+        let clean = prepared.clean
+        let options = response.inlineOptions ?? InlineAnnotationOptions()
+        let unsafe = InlineAnnotations.unsafeLineEnds(clean, language: response.language ?? .rust)
+        var above: [Int: [String]] = [:]
+        var trailing: [Int: [String]] = [:]
+        var empty: [String] = []
+        let computed = response.inlineKinds ?? kinds ?? []
+
+        if computed.contains(.codeLens) {
+            var count = 0
+            // Lenses that land on the same line (a symbol's reference count and its test actions, whose
+            // ranges may start at the attribute or at the name) become one line.
+            var merged: [Int: BridgeCodeLens] = [:]
+            var order: [Int] = []
+            for lens in response.codeLenses ?? [] where clean.indices.contains(lens.line) {
+                let anchor = Self.attributeStart(clean, lens.line)
+                if var existing = merged[anchor] {
+                    existing.references = existing.references ?? lens.references
+                    existing.actions += lens.actions.filter { !existing.actions.contains($0) }
+                    merged[anchor] = existing
+                } else {
+                    var lens = lens
+                    lens.line = anchor
+                    merged[anchor] = lens
+                    order.append(anchor)
+                }
+            }
+            for anchor in order {
+                guard let lens = merged[anchor], let text = InlineAnnotations.lensText(lens) else { continue }
+                above[anchor, default: []].append("\(Self.indentation(of: clean[anchor]))\(Self.marker) \(text)\n")
+                count += 1
+            }
+            if count == 0 { empty.append("no code lenses") }
+        }
+        if computed.contains(.inlayHints) {
+            let grouped = Dictionary(grouping: (response.inlayHints ?? []).filter { clean.indices.contains($0.line) }, by: \.line)
+            for (line, hints) in grouped {
+                let code = InlineAnnotations.splitTrailing(clean[line]).code
+                if options.hintPlacement == .endOfLine, !unsafe.contains(line) {
+                    trailing[line, default: []].append("» " + InlineAnnotations.summarizeHints(code, hints: hints))
+                } else {
+                    let rendered = InlineAnnotations.renderHints(code, hints: hints).trimmingCharacters(in: .whitespaces)
+                    above[line, default: []].append("\(Self.indentation(of: code))\(Self.marker) » \(rendered)\n")
+                }
+            }
+            if grouped.isEmpty { empty.append("no inlay hints") }
+        }
+        if computed.contains(.errorLens) {
+            let grouped = Dictionary(grouping: (response.diagnostics ?? []).filter { clean.indices.contains($0.range.startLine) },
+                                     by: \.range.startLine)
+            for (line, items) in grouped {
+                guard let text = InlineAnnotations.errorLensText(items, showSource: options.errorLensShowSource) else { continue }
+                if unsafe.contains(line) {
+                    above[line, default: []].append("\(Self.indentation(of: clean[line]))\(Self.marker) \(text)\n")
+                } else {
+                    trailing[line, default: []].append(text)
+                }
+            }
+            if grouped.isEmpty {
+                empty.append(response.diagnosticsReceived == false ? "no diagnostics reported yet (try again in a moment)" : "no problems")
+            }
+        }
+        let operations = InlineAnnotations.operations(prepared, above: above, trailing: trailing)
+        var message: String?
+        if above.isEmpty && trailing.isEmpty {
+            message = "CrossKit: " + (empty.isEmpty ? "nothing to show." : empty.joined(separator: ", ") + ".")
+        }
+        return EditorOutcome(operations: operations, message: message)
+    }
+
+    func clearInline(_ buffer: EditorBuffer) -> EditorOutcome {
+        let prepared = InlineAnnotations.prepare(buffer, removing: Set(InlineKind.allCases))
+        let changed = prepared.removed.count + zip(prepared.keptOriginalIndex, prepared.clean).filter { buffer.lines[$0.0] != $0.1 }.count
+        guard changed > 0 else { return EditorOutcome(message: "No inline annotations to remove.") }
+        return EditorOutcome(operations: InlineAnnotations.operations(prepared, above: [:], trailing: [:]))
     }
 
     // MARK: Tests (CodeLens substitute: `// [CrossKit] ▶ …` markers above test functions)
@@ -346,8 +482,14 @@ public struct EditorCommandEngine: Sendable {
 
     func clearAnnotations(_ buffer: EditorBuffer) -> EditorOutcome {
         let indices = buffer.lines.indices.filter { Self.isAnnotation(buffer.lines[$0]) }
-        guard !indices.isEmpty else { return EditorOutcome(message: "No CrossKit annotations to remove.") }
-        var operations: [BufferOperation] = indices.reversed().map { .replaceLines(start: $0, count: 1, with: []) }
+        // Trailing `  // [CrossKit] …` segments (inlay hints, ErrorLens) are cut off their lines first.
+        var operations: [BufferOperation] = buffer.lines.enumerated().compactMap { index, line in
+            guard !Self.isAnnotation(line) else { return nil }
+            let stripped = InlineAnnotations.stripTrailing(line)
+            return stripped == line ? nil : .replaceLines(start: index, count: 1, with: [stripped])
+        }
+        guard !indices.isEmpty || !operations.isEmpty else { return EditorOutcome(message: "No CrossKit annotations to remove.") }
+        operations += indices.reversed().map { .replaceLines(start: $0, count: 1, with: []) }
         let caret = buffer.selection.start
         let removedAbove = indices.filter { $0 < caret.line }.count
         operations.append(.select(.caret(max(0, caret.line - removedAbove), caret.column)))

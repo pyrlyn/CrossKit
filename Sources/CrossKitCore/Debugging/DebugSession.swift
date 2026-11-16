@@ -106,6 +106,7 @@ public final class DebugSession: @unchecked Sendable {
             "cwd": .string(plan.workingDirectory),
             "stopOnEntry": false,
         ]
+        if !plan.lldbInitCommands.isEmpty { launch["initCommands"] = .array(plan.lldbInitCommands.map(JSONValue.string)) }
         if plan.debugger == .codelldb {
             launch["env"] = .object(plan.environment.mapValues(JSONValue.string))
             launch["terminal"] = "console"

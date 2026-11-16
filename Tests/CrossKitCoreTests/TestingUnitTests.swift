@@ -355,6 +355,20 @@ final class TestRunnerResolverTests: XCTestCase {
         XCTAssertEqual(Array(one.arguments.suffix(2)), ["--tests", "demo.CalcTest.adds"])
     }
 
+    func testInlineAnnotationsAreNotReportedAsUnsavedChanges() async throws {
+        try write("mise/installs/zig/0.17.1/zig", "#!/bin/sh\necho '1/1 main.test.adds...OK'\necho 'All 1 tests passed.'\n")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: home.appendingPathComponent("mise/installs/zig/0.17.1/zig").path)
+        try write("solo/main.zig", "test \"adds\" {\n}\n")
+        let file = home.appendingPathComponent("solo/main.zig")
+        // The buffer only differs from the saved file by CrossKit's code lens and ErrorLens annotations.
+        let buffer = "// [CrossKit] ◆ ▶ Run Test · ⚙ Debug Test\ntest \"adds\" {  // [CrossKit] ⚠ warning: unused\n}\n"
+        let service = TestService(resolver: resolver)
+        let tests = service.discover(.zig, file: file, text: buffer)
+        let run = try await service.run(.zig, file: file, text: buffer, scope: .file, cursorLine: 1, tests: tests)
+        XCTAssertEqual(run.tests.map(\.status), [.passed])
+        XCTAssertNil(run.warning)
+    }
+
     func testMissingZigIsGraceful() throws {
         try write("solo/main.zig")
         let file = home.appendingPathComponent("solo/main.zig")

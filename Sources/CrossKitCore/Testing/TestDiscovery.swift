@@ -186,6 +186,20 @@ public enum TestDiscovery {
     private static let zigMain = try! NSRegularExpression(pattern: #"^\s*pub\s+fn\s+main\s*\("#)
     private static let rustMain = try! NSRegularExpression(pattern: #"^\s*(?:pub\s+)?(?:async\s+)?fn\s+main\s*\("#)
 
+    /// 0-based line of the program entry point (`main`), if the file declares one.
+    public static func mainLine(_ language: Language, text: String) -> Int? {
+        let regex: NSRegularExpression
+        switch language {
+        case .zig: regex = zigMain
+        case .rust: regex = rustMain
+        case .kotlin: regex = kotlinMain
+        }
+        return text.components(separatedBy: "\n").firstIndex { line in
+            let code = stripLineComment(line)
+            return regex.firstMatch(in: code, range: NSRange(code.startIndex..., in: code)) != nil
+        }
+    }
+
     /// Whether the file declares a program entry point (`main`).
     public static func hasMain(_ language: Language, text: String) -> Bool {
         let regex: NSRegularExpression
