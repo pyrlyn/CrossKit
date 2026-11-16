@@ -100,7 +100,7 @@ struct LanguageSection: View {
                 LabeledContent("Features") {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Feature.allCases.filter { $0.applies(to: language) }) { feature in
-                            Toggle(feature.displayName, isOn: model.featureBinding(feature, language))
+                            Toggle(feature.displayName(for: language), isOn: model.featureBinding(feature, language))
                                 .toggleStyle(.checkbox)
                         }
                     }
