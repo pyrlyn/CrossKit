@@ -362,7 +362,10 @@ final class FeatureEndToEndTests: XCTestCase {
     func testRustInlineAnnotations() async throws {
         guard ServerLocator().detect(.rust) != nil else { throw XCTSkip("rust-analyzer not found") }
         guard TestToolchain().cargo() != nil else { throw XCTSkip("cargo not found") }
+        // The doc comment makes rust-analyzer's flat symbol range start above `fn add`: the lens must still
+        // count references at the name and sit directly above the declaration.
         let source = """
+        /// Adds two numbers.
         fn add(a: i32, b: i32) -> i32 {
             a + b
         }

@@ -211,7 +211,11 @@ public struct TestRunnerResolver: Sendable {
 
     /// The project's launch configuration target, else the Kotlin target in settings.
     public func kotlinTargetChoice(projectRoot: URL) -> KotlinTargetChoice {
-        if let raw = settings.launchConfiguration(for: .kotlin, projectRoot: projectRoot.path)?.kotlinTarget {
+        // Launch configurations are saved under the canonical root (/private/tmp/…, see LaunchPlanner.plan),
+        // while test requests arrive with symlinks resolved the Foundation way (/tmp/…).
+        let canonical = LaunchPlanner.canonicalPath(projectRoot.path)
+        if let raw = (settings.launchConfiguration(for: .kotlin, projectRoot: canonical)
+                      ?? settings.launchConfiguration(for: .kotlin, projectRoot: projectRoot.path))?.kotlinTarget {
             return KotlinTargetChoice(raw)
         }
         return settings.kotlinTarget
@@ -355,7 +359,8 @@ public struct TestService: Sendable {
                                 duration: outcome.duration, exitCode: outcome.exitCode, timedOut: outcome.timedOut,
                                 tests: results, output: outcome.output)
         let disk = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
-        if disk.trimmingCharacters(in: .whitespacesAndNewlines) != Self.withoutTestMarkers(text).trimmingCharacters(in: .whitespacesAndNewlines) {
+        // Compare without any CrossKit annotations (test markers, code lenses, inlay hints, ErrorLens).
+        if disk.trimmingCharacters(in: .whitespacesAndNewlines) != InlineAnnotations.cleanText(text).trimmingCharacters(in: .whitespacesAndNewlines) {
             run.warning = "The editor buffer has unsaved changes; tests ran against the saved file."
         }
         return run

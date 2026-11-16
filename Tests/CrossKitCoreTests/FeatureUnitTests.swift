@@ -192,6 +192,24 @@ final class KotlinTargetTests: XCTestCase {
         XCTAssertTrue(command.arguments.contains("demo.CalcTest"))
     }
 
+    func testTestRunsUseTheLaunchConfigurationTargetUnderSymlinkedPaths() throws {
+        try makeExec("proj/gradlew")
+        try write("proj/settings.gradle.kts")
+        try write("proj/app/build.gradle.kts", Self.multiplatformScript)
+        let text = "package demo\n\nimport kotlin.test.Test\n\nclass CalcTest {\n    @Test\n    fun adds() {}\n}\n"
+        let canonicalFile = try write("proj/app/src/commonTest/kotlin/demo/CalcTest.kt", text)
+        // Debugging saves the configuration under the canonical root (/private/var/…).
+        settings.saveLaunchConfiguration(LaunchConfiguration(language: .kotlin, projectRoot: home.appendingPathComponent("proj").path,
+                                                             kotlinTarget: "macosArm64"))
+        // The bridge hands test requests over with Foundation's symlink resolution (/var/…).
+        XCTAssertTrue(canonicalFile.path.hasPrefix("/private/var/"), canonicalFile.path)
+        let file = URL(fileURLWithPath: String(canonicalFile.path.dropFirst("/private".count)))
+        let resolver = TestRunnerResolver(settings: settings, toolchain: TestToolchain(locator: locator))
+        let tests = TestDiscovery.discover(.kotlin, text: text, filePath: file.path, root: resolver.projectRoot(for: file, language: .kotlin))
+        let command = try resolver.command(language: .kotlin, file: file, scope: .file, tests: tests, cursorTest: nil)
+        XCTAssertEqual(command.arguments.first, ":app:macosArm64Test")
+    }
+
     func testLaunchConfigurationDecodesWithoutKotlinTarget() throws {
         let old = #"[{"language":"kotlin","projectRoot":"/p","program":"","arguments":[],"environment":{},"workingDirectory":"","buildBeforeLaunch":true,"testArguments":[],"updatedAt":0}]"#
         settings.defaults.set(Data(old.utf8), forKey: "launchConfigurations")

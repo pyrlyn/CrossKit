@@ -93,6 +93,10 @@ public final class LSPClient: @unchecked Sendable {
                     "hover": ["contentFormat": ["plaintext", "markdown"]],
                     "definition": ["linkSupport": true],
                     "references": [:],
+                    // Nested DocumentSymbol results carry selectionRange (the name), where code lenses ask for
+                    // references; flat SymbolInformation only has the full range (doc comments, attributes).
+                    "documentSymbol": ["hierarchicalDocumentSymbolSupport": true],
+                    "inlayHint": [:],
                     "publishDiagnostics": ["relatedInformation": false, "versionSupport": true],
                 ],
             ],

@@ -130,9 +130,8 @@ public final class PreviewService: @unchecked Sendable {
         }
 
         // 2. Render.
-        guard let java = planner.debuggers.find(.jdb) else {
-            throw DebugError.toolNotFound("java", hint: DebuggerLocator.installHint(.jdb))
-        }
+        // The java chosen in settings (or detected), as for debugging.
+        let java = try planner.debuggerPath(for: .jdb)
         let rendererClasses = try compileRenderer(java: java)
         let outDir = try outputDirectory(for: file)
         let density = settings.previewDensity

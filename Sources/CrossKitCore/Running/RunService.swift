@@ -117,7 +117,8 @@ public final class RunService: @unchecked Sendable {
                 guard let cpLine = run.output.split(separator: "\n").last(where: { $0.hasPrefix("CROSSKIT_CLASSPATH=") }) else {
                     throw DebugError.noProgram("Gradle did not report a runtime classpath. Is the Kotlin JVM or Multiplatform plugin applied in \(plan.projectRoot)?")
                 }
-                guard let java = planner.debuggers.find(.jdb) else { throw DebugError.toolNotFound("java", hint: DebuggerLocator.installHint(.jdb)) }
+                // The java chosen in settings (or detected), as for debugging.
+                let java = try planner.debuggerPath(for: .jdb)
                 program = mainClass
                 executable = java.path
                 arguments = ["-cp", String(cpLine.dropFirst("CROSSKIT_CLASSPATH=".count)), mainClass] + plan.arguments
@@ -158,7 +159,9 @@ public final class RunService: @unchecked Sendable {
                 finished.signal()
             })
         process.closeStdin()
-        lock.withLock { processes[id] = process }
+        // A quick program may already have exited (and its onExit run): registering it then would leave a
+        // stale entry whose pid Stop / stopAll would later signal after it was reused.
+        lock.withLock { if process.isRunning { processes[id] = process } }
         let wait = planner.settings.runWaitSeconds
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.global().async {
