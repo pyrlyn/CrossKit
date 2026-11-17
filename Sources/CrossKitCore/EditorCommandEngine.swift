@@ -589,8 +589,10 @@ public struct EditorCommandEngine: Sendable {
         return "\(position)  \(preview.prefix(120))"
     }
 
+    /// A CrossKit comment line (`// [CrossKit]`, or `;; [CrossKit]` in WebAssembly text).
     public static func isAnnotation(_ line: String) -> Bool {
-        line.trimmingCharacters(in: .whitespaces).hasPrefix(marker)
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix(marker) || trimmed.hasPrefix(";; [CrossKit]")
     }
 
     static func split(_ line: String) -> (String, String) {

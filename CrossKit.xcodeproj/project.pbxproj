@@ -38,6 +38,7 @@
 		607C43CEAE35DA10C0F28756 /* DebuggerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 220176F96A66B2BFD6FFF1A2 /* DebuggerView.swift */; };
 		636F8799A4087AFFA28206AC /* XcodeDocumentLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A782BEED5BA1A1DE7AECF1 /* XcodeDocumentLocator.swift */; };
 		64E7EE4E1FCBAEBD7C1BEFD2 /* KotlinProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = E52B868AD575185F71072ECB /* KotlinProject.swift */; };
+		656D6AD37EC294447D7170A9 /* LanguageUnitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14280A0481DFDB45F5BB8A53 /* LanguageUnitTests.swift */; };
 		66048B07048FC1FC4CD3B3E6 /* CoverageEndToEndTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A37F4248167724070358013 /* CoverageEndToEndTests.swift */; };
 		67159A475C0C99D0D8C7EDBA /* CrossKitCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5B889993344D4587F656E372 /* CrossKitCore.framework */; };
 		683287F464F4F186EC74FB44 /* JSTesting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8FCF9BCF24CA006C38DB4E /* JSTesting.swift */; };
@@ -156,6 +157,7 @@
 		0E13546AF09675E8ABB2C77C /* EndToEndTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndToEndTests.swift; sourceTree = "<group>"; };
 		0FDCD8AAA0F7C1C1B08A247C /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		106963EF64EEADCB35776568 /* FramingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FramingTests.swift; sourceTree = "<group>"; };
+		14280A0481DFDB45F5BB8A53 /* LanguageUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageUnitTests.swift; sourceTree = "<group>"; };
 		14ACA464890A538DF09BA5F5 /* DebugEndToEndTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugEndToEndTests.swift; sourceTree = "<group>"; };
 		1A37F4248167724070358013 /* CoverageEndToEndTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverageEndToEndTests.swift; sourceTree = "<group>"; };
 		1D7B80F89828D1772F004794 /* PreviewDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewDiscovery.swift; sourceTree = "<group>"; };
@@ -397,6 +399,7 @@
 				93C37ABE8720F04CA0ED207F /* FeatureEndToEndTests.swift */,
 				693B0CAE3D43F7ABFE20ABF1 /* FeatureUnitTests.swift */,
 				106963EF64EEADCB35776568 /* FramingTests.swift */,
+				14280A0481DFDB45F5BB8A53 /* LanguageUnitTests.swift */,
 				7012B98A17E5ADC1E6FF886E /* TestingUnitTests.swift */,
 				7B9037659067ECA665019BB2 /* TestRunEndToEndTests.swift */,
 			);
@@ -658,6 +661,7 @@
 				F39FEF493468F6805606046D /* FeatureEndToEndTests.swift in Sources */,
 				CF36B063E55F15AE911C43C9 /* FeatureUnitTests.swift in Sources */,
 				A0A663AA2AEDF7A5DF720BBC /* FramingTests.swift in Sources */,
+				656D6AD37EC294447D7170A9 /* LanguageUnitTests.swift in Sources */,
 				3AFB354B039041A72ECBA6C0 /* TestRunEndToEndTests.swift in Sources */,
 				A370474AA35A84E80E5929CA /* TestingUnitTests.swift in Sources */,
 			);
